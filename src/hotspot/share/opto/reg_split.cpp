@@ -114,6 +114,8 @@ void PhaseChaitin::insert_proj( Block *b, uint i, Node *spill, uint maxlrg ) {
   // Do not insert between a call and his Catch
   if( b->get_node(i)->is_Catch() ) {
     // Put the instruction at the top of the fall-thru block.
+    // This assumes that the instruction is not used in the other exception
+    // blocks. Global code motion is responsible for maintaining this invariant.
     // Find the fall-thru projection
     while( 1 ) {
       const CatchProjNode *cp = b->get_node(++i)->as_CatchProj();
@@ -1278,17 +1280,15 @@ uint PhaseChaitin::Split(uint maxlrg, ResourceArea* split_arena) {
       IndexSet *liveout = _live->live(b);
       if( !liveout->member(defidx) ) {
 #ifdef ASSERT
-        if (VerifyRegisterAllocator) {
-          // The index defidx is not live.  Check the liveout array to ensure that
-          // it contains no members which compress to defidx.  Finding such an
-          // instance may be a case to add liveout adjustment in compress_uf_map().
-          // See 5063219.
-          if (!liveout->is_empty()) {
-            uint member;
-            IndexSetIterator isi(liveout);
-            while ((member = isi.next()) != 0) {
-              assert(defidx != _lrg_map.find_const(member), "Live out member has not been compressed");
-            }
+        // The index defidx is not live.  Check the liveout array to ensure that
+        // it contains no members which compress to defidx.  Finding such an
+        // instance may be a case to add liveout adjustment in compress_uf_map().
+        // See 5063219.
+        if (!liveout->is_empty()) {
+          uint member;
+          IndexSetIterator isi(liveout);
+          while ((member = isi.next()) != 0) {
+            assert(defidx != _lrg_map.find_const(member), "Live out member has not been compressed");
           }
         }
 #endif
