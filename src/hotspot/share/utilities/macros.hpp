@@ -431,6 +431,17 @@
 #define NOT_WINDOWS(code) code
 #endif
 
+#ifndef _WINDOWS
+#ifndef POSIX
+#define POSIX
+#endif
+#define POSIX_ONLY(code) code
+#define NOT_POSIX(code)
+#else
+#define POSIX_ONLY(code)
+#define NOT_POSIX(code) code
+#endif
+
 #if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) || defined(__APPLE__)
 #ifndef BSD
 #define BSD
@@ -568,8 +579,6 @@
 #define AARCH64_ONLY(code)
 #define NOT_AARCH64(code) code
 #endif
-
-#define MACOS_AARCH64_ONLY(x) MACOS_ONLY(AARCH64_ONLY(x))
 
 #ifdef VM_LITTLE_ENDIAN
 #define LITTLE_ENDIAN_ONLY(code) code

@@ -55,7 +55,7 @@
 #include "runtime/mutexLocker.hpp"
 #include "runtime/os.inline.hpp"
 #include "runtime/osThread.hpp"
-#include "runtime/safefetch.inline.hpp"
+#include "runtime/safefetch.hpp"
 #include "runtime/sharedRuntime.hpp"
 #include "runtime/thread.inline.hpp"
 #include "runtime/threadSMR.hpp"
@@ -1033,11 +1033,6 @@ void os::print_environment_variables(outputStream* st, const char** env_list) {
 void os::print_cpu_info(outputStream* st, char* buf, size_t buflen) {
   // cpu
   st->print("CPU:");
-#if defined(__APPLE__) && !defined(ZERO)
-   if (VM_Version::is_cpu_emulated()) {
-     st->print(" (EMULATED)");
-   }
-#endif
   st->print(" total %d", os::processor_count());
   // It's not safe to query number of active processors after crash
   // st->print("(active %d)", os::active_processor_count()); but we can
@@ -1888,7 +1883,6 @@ void os::realign_memory(char *addr, size_t bytes, size_t alignment_hint) {
 
 char* os::reserve_memory_special(size_t size, size_t alignment,
                                  char* addr, bool executable) {
-
   assert(is_aligned(addr, alignment), "Unaligned request address");
 
   char* result = pd_reserve_memory_special(size, alignment, addr, executable);
