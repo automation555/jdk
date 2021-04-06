@@ -32,6 +32,7 @@
 #include "services/memReporter.hpp"
 #include "services/mallocTracker.inline.hpp"
 #include "services/memTracker.hpp"
+#include "services/nmtPreInitBuffer.hpp"
 #include "services/threadStackTracker.hpp"
 #include "utilities/debug.hpp"
 #include "utilities/defaultStream.hpp"
@@ -45,79 +46,44 @@ volatile NMT_TrackingLevel MemTracker::_tracking_level = NMT_unknown;
 NMT_TrackingLevel MemTracker::_cmdline_tracking_level = NMT_unknown;
 
 MemBaseline MemTracker::_baseline;
-bool MemTracker::_is_nmt_env_valid = true;
 
-static const size_t buffer_size = 64;
+// Returns the parsed level; NMT_unknown if string is invalid
+NMT_TrackingLevel MemTracker::parse_level_string(const char* s) {
+  if (strcmp(s, "summary") == 0) {
+    return NMT_summary;
+  } else if (strcmp(s, "detail") == 0) {
+    return NMT_detail;
+  } else if (strcmp(s, "off") == 0) {
+    return NMT_off;
+  }
+  return NMT_unknown;
+}
 
-NMT_TrackingLevel MemTracker::init_tracking_level() {
+bool MemTracker::initialize(NMT_TrackingLevel level) {
+  assert(_tracking_level == NMT_unknown, "only call once");
+  assert(level == NMT_off || level == NMT_summary || level == NMT_detail, "sanity");
+
   // Memory type is encoded into tracking header as a byte field,
   // make sure that we don't overflow it.
   STATIC_ASSERT(mt_number_of_types <= max_jubyte);
 
-  char nmt_env_variable[buffer_size];
-  jio_snprintf(nmt_env_variable, sizeof(nmt_env_variable), "NMT_LEVEL_%d", os::current_process_id());
-  const char* nmt_env_value;
-#ifdef _WINDOWS
-  // Read the NMT environment variable from the PEB instead of the CRT
-  char value[buffer_size];
-  nmt_env_value = GetEnvironmentVariable(nmt_env_variable, value, (DWORD)sizeof(value)) != 0 ? value : NULL;
-#else
-  nmt_env_value = ::getenv(nmt_env_variable);
-#endif
-  NMT_TrackingLevel level = NMT_off;
-  if (nmt_env_value != NULL) {
-    if (strcmp(nmt_env_value, "summary") == 0) {
-      level = NMT_summary;
-    } else if (strcmp(nmt_env_value, "detail") == 0) {
-      level = NMT_detail;
-    } else if (strcmp(nmt_env_value, "off") != 0) {
-      // The value of the environment variable is invalid
-      _is_nmt_env_valid = false;
+  if (level >= NMT_off) {
+    if (!MallocTracker::initialize(level) ||
+        !VirtualMemoryTracker::initialize(level)) {
+      _tracking_level = NMT_off;
     }
-    // Remove the environment variable to avoid leaking to child processes
-    os::unsetenv(nmt_env_variable);
+    if (level >= NMT_summary) {
+      if (!VirtualMemoryTracker::late_initialize(level) ||
+          !ThreadStackTracker::late_initialize(level)) {
+        shutdown();
+        return false;
+      }
+    }
   }
 
-  if (!MallocTracker::initialize(level) ||
-      !VirtualMemoryTracker::initialize(level)) {
-    level = NMT_off;
-  }
-  return level;
-}
-
-void MemTracker::init() {
-  NMT_TrackingLevel level = tracking_level();
-  if (level >= NMT_summary) {
-    if (!VirtualMemoryTracker::late_initialize(level) ||
-        !ThreadStackTracker::late_initialize(level)) {
-      shutdown();
-      return;
-    }
-  }
-}
-
-bool MemTracker::check_launcher_nmt_support(const char* value) {
-  if (strcmp(value, "=detail") == 0) {
-    if (MemTracker::tracking_level() != NMT_detail) {
-      return false;
-    }
-  } else if (strcmp(value, "=summary") == 0) {
-    if (MemTracker::tracking_level() != NMT_summary) {
-      return false;
-    }
-  } else if (strcmp(value, "=off") == 0) {
-    if (MemTracker::tracking_level() != NMT_off) {
-      return false;
-    }
-  } else {
-    _is_nmt_env_valid = false;
-  }
+  _tracking_level = _cmdline_tracking_level = level;
 
   return true;
-}
-
-bool MemTracker::verify_nmt_option() {
-  return _is_nmt_env_valid;
 }
 
 void* MemTracker::malloc_base(void* memblock) {
@@ -137,7 +103,6 @@ void Tracker::record(address addr, size_t size) {
       ShouldNotReachHere();
   }
 }
-
 
 // Shutdown can only be issued via JCmd, and NMT JCmd is serialized by lock
 void MemTracker::shutdown() {
@@ -219,4 +184,7 @@ void MemTracker::tuning_statistics(outputStream* out) {
   NOT_PRODUCT(out->print_cr("Peak concurrent access: %d", MallocSiteTable::access_peak_count());)
   out->cr();
   MallocSiteTable::print_tuning_statistics(out);
+  out->cr();
+  NMTPreInitBuffer::print_state(out);
+  out->cr();
 }

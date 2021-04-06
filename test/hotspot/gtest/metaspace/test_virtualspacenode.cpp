@@ -33,6 +33,7 @@
 #include "memory/metaspace/metaspaceSettings.hpp"
 #include "memory/metaspace/virtualSpaceNode.hpp"
 #include "runtime/mutexLocker.hpp"
+#include "services/memTracker.hpp"
 #include "utilities/debug.hpp"
 //#define LOG_PLEASE
 #include "metaspaceGtestCommon.hpp"
@@ -337,6 +338,11 @@ public:
   }
 
   void test_arbitrary_commits() {
+
+    // Disable test if NMT is on. Waiting for JDK-8263455 to be fixed.
+    if (MemTracker::tracking_level() > NMT_off) {
+      return;
+    }
 
     assert(_commit_limit >= _vs_word_size, "For this test no commit limit.");
 

@@ -1050,13 +1050,15 @@ void Arguments::add_string(char*** bldarray, int* count, const char* arg) {
     return;
   }
 
-  int new_count = *count + 1;
+  int old_count = *count;
+  int new_count = old_count + 1;
 
   // expand the array and add arg to the last element
-  if (*bldarray == NULL) {
-    *bldarray = NEW_C_HEAP_ARRAY(char*, new_count, mtArguments);
-  } else {
-    *bldarray = REALLOC_C_HEAP_ARRAY(char*, *bldarray, new_count, mtArguments);
+  //  (expand in pow 2 steps to save on realloc calls)
+  size_t arraySizeNow = next_power_of_2(old_count);
+  size_t arraySizeNeeded = next_power_of_2(new_count);
+  if (arraySizeNow < arraySizeNeeded) {
+    *bldarray = REALLOC_C_HEAP_ARRAY(char*, *bldarray, arraySizeNeeded, mtArguments);
   }
   (*bldarray)[*count] = os::strdup_check_oom(arg);
   *count = new_count;
@@ -1975,17 +1977,6 @@ bool Arguments::check_vm_args_consistency() {
                 "not " SIZE_FORMAT "\n",
                 TLABRefillWasteFraction);
     status = false;
-  }
-
-  if (PrintNMTStatistics) {
-#if INCLUDE_NMT
-    if (MemTracker::tracking_level() == NMT_off) {
-#endif // INCLUDE_NMT
-      warning("PrintNMTStatistics is disabled, because native memory tracking is not enabled");
-      PrintNMTStatistics = false;
-#if INCLUDE_NMT
-    }
-#endif
   }
 
   status = CompilerConfig::check_args_consistency(status);
@@ -3692,29 +3683,6 @@ jint Arguments::match_special_option_and_act(const JavaVMInitArgs* args,
     if (match_option(option, "-XX:+PrintFlagsInitial")) {
       JVMFlag::printFlags(tty, false);
       vm_exit(0);
-    }
-    if (match_option(option, "-XX:NativeMemoryTracking", &tail)) {
-#if INCLUDE_NMT
-      // The launcher did not setup nmt environment variable properly.
-      if (!MemTracker::check_launcher_nmt_support(tail)) {
-        warning("Native Memory Tracking did not setup properly, using wrong launcher?");
-      }
-
-      // Verify if nmt option is valid.
-      if (MemTracker::verify_nmt_option()) {
-        // Late initialization, still in single-threaded mode.
-        if (MemTracker::tracking_level() >= NMT_summary) {
-          MemTracker::init();
-        }
-      } else {
-        vm_exit_during_initialization("Syntax error, expecting -XX:NativeMemoryTracking=[off|summary|detail]", NULL);
-      }
-      continue;
-#else
-      jio_fprintf(defaultStream::error_stream(),
-        "Native Memory Tracking is not supported in this VM\n");
-      return JNI_ERR;
-#endif
     }
 
 #ifndef PRODUCT
