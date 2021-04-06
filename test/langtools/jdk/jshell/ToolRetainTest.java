@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -139,6 +139,31 @@ public class ToolRetainTest extends ReplToolTesting {
         test(
                 (a) -> assertCommandOutputContains(a, "int h =8", ""),
                 (a) -> assertCommandOutputContains(a, "/edit h", "Edit Error:")
+        );
+    }
+
+    public void testRetainBrowser() {
+        test(
+                (a) -> assertCommand(a, "/set browser -retain nonexistent",
+                        "|  Browser set to: nonexistent\n" +
+                        "|  Browser setting retained: nonexistent"),
+                (a) -> assertCommand(a, "/exit", "")
+        );
+        test(
+                (a) -> assertCommand(a, "/set browser", "|  /set browser -retain nonexistent"),
+                (a) -> assertCommandOutputContains(a, "/doc String", "Browser Error:")
+        );
+    }
+
+    public void testRetainBrowserBlank() {
+        test(
+                (a) -> assertCommand(a, "/set browser nonexistent", "|  Browser set to: nonexistent"),
+                (a) -> assertCommand(a, "/set browser -retain", "|  Browser setting retained: nonexistent"),
+                (a) -> assertCommand(a, "/exit", "")
+        );
+        test(
+                (a) -> assertCommandOutputContains(a, "int h =8", ""),
+                (a) -> assertCommandOutputContains(a, "/doc String", "Browser Error:")
         );
     }
 
