@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1994, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -170,7 +170,7 @@ public class DataOutputStream extends FilterOutputStream implements DataOutput {
      */
     public final void writeShort(int v) throws IOException {
         writeBuffer[0] = (byte)(v >>> 8);
-        writeBuffer[1] = (byte)(v >>> 0);
+        writeBuffer[1] = (byte) v;
         out.write(writeBuffer, 0, 2);
         incCount(2);
     }
@@ -186,7 +186,7 @@ public class DataOutputStream extends FilterOutputStream implements DataOutput {
      */
     public final void writeChar(int v) throws IOException {
         writeBuffer[0] = (byte)(v >>> 8);
-        writeBuffer[1] = (byte)(v >>> 0);
+        writeBuffer[1] = (byte) v;
         out.write(writeBuffer, 0, 2);
         incCount(2);
     }
@@ -204,7 +204,7 @@ public class DataOutputStream extends FilterOutputStream implements DataOutput {
         writeBuffer[0] = (byte)(v >>> 24);
         writeBuffer[1] = (byte)(v >>> 16);
         writeBuffer[2] = (byte)(v >>>  8);
-        writeBuffer[3] = (byte)(v >>>  0);
+        writeBuffer[3] = (byte) v;
         out.write(writeBuffer, 0, 4);
         incCount(4);
     }
@@ -226,7 +226,7 @@ public class DataOutputStream extends FilterOutputStream implements DataOutput {
         writeBuffer[4] = (byte)(v >>> 24);
         writeBuffer[5] = (byte)(v >>> 16);
         writeBuffer[6] = (byte)(v >>>  8);
-        writeBuffer[7] = (byte)(v >>>  0);
+        writeBuffer[7] = (byte) v;
         out.write(writeBuffer, 0, 8);
         incCount(8);
     }
@@ -301,7 +301,7 @@ public class DataOutputStream extends FilterOutputStream implements DataOutput {
         for (int i = 0 ; i < len ; i++) {
             int v = s.charAt(i);
             writeBuffer[0] = (byte)(v >>> 8);
-            writeBuffer[1] = (byte)(v >>> 0);
+            writeBuffer[1] = (byte) v;
             out.write(writeBuffer, 0, 2);
         }
         incCount(len * 2);
@@ -369,7 +369,8 @@ public class DataOutputStream extends FilterOutputStream implements DataOutput {
             throw new UTFDataFormatException(tooLongMsg(str, utflen));
 
         final byte[] bytearr;
-        if (out instanceof DataOutputStream dos) {
+        if (out instanceof DataOutputStream) {
+            DataOutputStream dos = (DataOutputStream)out;
             if (dos.bytearr == null || (dos.bytearr.length < (utflen + 2)))
                 dos.bytearr = new byte[(utflen*2) + 2];
             bytearr = dos.bytearr;
@@ -378,8 +379,8 @@ public class DataOutputStream extends FilterOutputStream implements DataOutput {
         }
 
         int count = 0;
-        bytearr[count++] = (byte) ((utflen >>> 8) & 0xFF);
-        bytearr[count++] = (byte) ((utflen >>> 0) & 0xFF);
+        bytearr[count++] = (byte) (utflen >>> 8);
+        bytearr[count++] = (byte) utflen;
 
         int i = 0;
         for (i = 0; i < strlen; i++) { // optimized for initial run of ASCII
@@ -395,10 +396,10 @@ public class DataOutputStream extends FilterOutputStream implements DataOutput {
             } else if (c >= 0x800) {
                 bytearr[count++] = (byte) (0xE0 | ((c >> 12) & 0x0F));
                 bytearr[count++] = (byte) (0x80 | ((c >>  6) & 0x3F));
-                bytearr[count++] = (byte) (0x80 | ((c >>  0) & 0x3F));
+                bytearr[count++] = (byte) (0x80 | (c & 0x3F));
             } else {
                 bytearr[count++] = (byte) (0xC0 | ((c >>  6) & 0x1F));
-                bytearr[count++] = (byte) (0x80 | ((c >>  0) & 0x3F));
+                bytearr[count++] = (byte) (0x80 | (c & 0x3F));
             }
         }
         out.write(bytearr, 0, utflen + 2);
