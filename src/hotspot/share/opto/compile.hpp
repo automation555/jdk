@@ -643,12 +643,13 @@ class Compile : public Phase {
 #endif
   }
 
-  void print_method(CompilerPhaseType cpt, const char *name, int level = 1);
+  void print_method(CompilerPhaseType cpt, const char *name, int level = 1, int idx = 0);
   void print_method(CompilerPhaseType cpt, int level = 1, int idx = 0);
   void print_method(CompilerPhaseType cpt, Node* n, int level = 3);
 
 #ifndef PRODUCT
   void igv_print_method_to_file(const char* phase_name = "Debug", bool append = false);
+  void igv_print_method_to_file_immediately(const char* phase_name = "Debug");
   void igv_print_method_to_network(const char* phase_name = "Debug");
   static IdealGraphPrinter* debug_file_printer() { return _debug_file_printer; }
   static IdealGraphPrinter* debug_network_printer() { return _debug_network_printer; }
