@@ -59,6 +59,7 @@
 #include "oops/symbol.hpp"
 #include "prims/jvmtiExport.hpp"
 #include "prims/methodHandles.hpp"
+#include "prims/nativeLookup.hpp"
 #include "runtime/arguments.hpp"
 #include "runtime/atomic.hpp"
 #include "runtime/frame.inline.hpp"
@@ -557,40 +558,25 @@ void Method::build_interpreter_method_data(const methodHandle& method, TRAPS) {
   }
 }
 
-MethodCounters* Method::build_method_counters(Thread* current, Method* m) {
+MethodCounters* Method::build_method_counters(Method* m, TRAPS) {
   // Do not profile the method if metaspace has hit an OOM previously
   if (ClassLoaderDataGraph::has_metaspace_oom()) {
     return NULL;
   }
 
-  methodHandle mh(current, m);
-  MethodCounters* counters;
-  if (current->is_Java_thread()) {
-    Thread* THREAD = current;
-    // Use the TRAPS version for a JavaThread so it will adjust the GC threshold
-    // if needed.
-    counters = MethodCounters::allocate_with_exception(mh, THREAD);
-    if (HAS_PENDING_EXCEPTION) {
-      CLEAR_PENDING_EXCEPTION;
-    }
-  } else {
-    // Call metaspace allocation that doesn't throw exception if the
-    // current thread isn't a JavaThread, ie. the VMThread.
-    counters = MethodCounters::allocate_no_exception(mh);
-  }
-
-  if (counters == NULL) {
+  methodHandle mh(THREAD, m);
+  MethodCounters* counters = MethodCounters::allocate(mh, THREAD);
+  if (HAS_PENDING_EXCEPTION) {
     CompileBroker::log_metaspace_failure();
     ClassLoaderDataGraph::set_metaspace_oom(true);
-    return NULL;
+    return NULL;   // return the exception (which is cleared)
   }
-
   if (!mh->init_method_counters(counters)) {
     MetadataFactory::free_metadata(mh->method_holder()->class_loader_data(), counters);
   }
 
   if (LogTouchedMethods) {
-    mh->log_touched(current);
+    mh->log_touched(THREAD);
   }
 
   return mh->method_counters();
