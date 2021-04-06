@@ -25,40 +25,14 @@
 
 #import "StaticTextAccessibility.h"
 
-@implementation StaticTextAccessibility
+#import <AppKit/NSAccessibility.h>
 
-- (nullable NSString *)accessibilityAttributedStringForRange:(NSRange)range
-{
-    NSLog(@"in StaticTextAccessibility accessibilityAttributedStringForRange");
-    return [self accessibilityStringForRangeAttribute:range];
-}
 
-- (nullable NSString *)accessibilityValue
-{
-    NSLog(@"in StaticTextAccessibility accessibilityValue");
-    return [self accessibilityValueAttribute];
-}
+@interface NavigableStaticTextAccessibility : StaticTextAccessibility <NSAccessibilityNavigableStaticText> {
 
-- (NSRange)accessibilityVisibleCharacterRange
-{
-    NSLog(@"in StaticTextAccessibility accessibilityVisibleCharacterRange");
-    return [self accessibilityVisibleCharacterRangeAttribute];
-}
-
-- (NSRange) accessibilityRangeForPoint:(NSPoint)point
-{
-    NSLog(@"in StaticTextAccessibility accessibilityRangeForPoint");
-    NSRange range = [self accessibilityRangeForPositionAttribute:point];
-    NSLog(@"String  for point %@ is %@", NSStringFromRange(range), NSStringFromPoint(point));
-    return range;
-}
-
-- (NSRange)accessibilityRangeForIndex:(int)index
-{
-    NSLog(@"in StaticTextAccessibility accessibilityRangeForIndex");
-    NSRange range = [self accessibilityRangeForIndexAttribute:index];
-    //NSLog(@"String  for index %d is %@", index, NSStringFromRange(range));
-    return range;
-}
-
+};
+- (NSRect)accessibilityFrameForRange:(NSRange)range;
+- (int)accessibilityLineForIndex:(int)index;
+- (NSRange)accessibilityRangeForLine:(int)line;
+- (nullable NSString *)accessibilityStringForRange:(NSRange)range;
 @end

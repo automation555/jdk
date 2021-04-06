@@ -37,6 +37,11 @@
 - (nullable NSString *)accessibilityValueAttribute;
 - (NSRange)accessibilityVisibleCharacterRangeAttribute;
 - (nullable NSString *)accessibilityStringForRangeAttribute:(NSRange)parameter;
+- (NSRect)accessibilityBoundsForRangeAttribute:(NSRange)parameter;
+- (int)accessibilityLineForIndexAttribute:(int)index;
+- (NSRange)accessibilityRangeForLineAttribute:(int)index;
+- (NSRange)accessibilityRangeForPositionAttribute:(NSPoint)point;
+- (NSRange)accessibilityRangeForIndexAttribute:(int)index;
 @end
 
 #endif
