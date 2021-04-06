@@ -43,7 +43,6 @@
 #include "gc/g1/g1FullCollector.hpp"
 #include "gc/g1/g1GCParPhaseTimesTracker.hpp"
 #include "gc/g1/g1GCPhaseTimes.hpp"
-#include "gc/g1/g1GCPauseType.hpp"
 #include "gc/g1/g1HeapSizingPolicy.hpp"
 #include "gc/g1/g1HeapTransition.hpp"
 #include "gc/g1/g1HeapVerifier.hpp"
@@ -64,6 +63,7 @@
 #include "gc/g1/g1StringDedup.hpp"
 #include "gc/g1/g1ThreadLocalData.hpp"
 #include "gc/g1/g1Trace.hpp"
+#include "gc/g1/g1YCTypes.hpp"
 #include "gc/g1/g1ServiceThread.hpp"
 #include "gc/g1/g1UncommitRegionTask.hpp"
 #include "gc/g1/g1VMOperations.hpp"
@@ -2848,15 +2848,18 @@ void G1CollectedHeap::expand_heap_after_young_collection(){
   }
 }
 
-void G1CollectedHeap::set_young_gc_name(char* young_gc_name) {
-  G1GCPauseType pause_type =
-    // The strings for all Concurrent Start pauses are the same, so the parameter
-    // does not matter here.
-    collector_state()->young_gc_pause_type(false /* concurrent_operation_is_full_mark */);
-  snprintf(young_gc_name,
-           MaxYoungGCNameLength,
-           "Pause Young (%s)",
-           G1GCPauseTypeHelper::to_string(pause_type));
+const char* G1CollectedHeap::young_gc_name() const {
+  if (collector_state()->in_concurrent_start_gc()) {
+    return "Pause Young (Concurrent Start)";
+  } else if (collector_state()->in_young_only_phase()) {
+    if (collector_state()->in_young_gc_before_mixed()) {
+      return "Pause Young (Prepare Mixed)";
+    } else {
+      return "Pause Young (Normal)";
+    }
+  } else {
+    return "Pause Young (Mixed)";
+  }
 }
 
 bool G1CollectedHeap::do_collection_pause_at_safepoint(double target_pause_time_ms) {
@@ -2879,21 +2882,6 @@ bool G1CollectedHeap::do_collection_pause_at_safepoint(double target_pause_time_
   return true;
 }
 
-void G1CollectedHeap::gc_tracer_report_gc_start() {
-  _gc_timer_stw->register_gc_start();
-  _gc_tracer_stw->report_gc_start(gc_cause(), _gc_timer_stw->gc_start());
-}
-
-void G1CollectedHeap::gc_tracer_report_gc_end(bool concurrent_operation_is_full_mark,
-                                              G1EvacuationInfo& evacuation_info) {
-  _gc_tracer_stw->report_evacuation_info(&evacuation_info);
-  _gc_tracer_stw->report_tenuring_threshold(_policy->tenuring_threshold());
-
-  _gc_timer_stw->register_gc_end();
-  _gc_tracer_stw->report_gc_end(_gc_timer_stw->gc_end(),
-  _gc_timer_stw->time_partitions());
-}
-
 void G1CollectedHeap::do_collection_pause_at_safepoint_helper(double target_pause_time_ms) {
   GCIdMark gc_id_mark;
 
@@ -2902,7 +2890,8 @@ void G1CollectedHeap::do_collection_pause_at_safepoint_helper(double target_paus
 
   policy()->note_gc_start();
 
-  gc_tracer_report_gc_start();
+  _gc_timer_stw->register_gc_start();
+  _gc_tracer_stw->report_gc_start(gc_cause(), _gc_timer_stw->gc_start());
 
   wait_for_root_region_scanning();
 
@@ -2937,12 +2926,11 @@ void G1CollectedHeap::do_collection_pause_at_safepoint_helper(double target_paus
   {
     G1EvacuationInfo evacuation_info;
 
+    _gc_tracer_stw->report_yc_type(collector_state()->yc_type());
+
     GCTraceCPUTime tcpu;
 
-    char young_gc_name[MaxYoungGCNameLength];
-    set_young_gc_name(young_gc_name);
-
-    GCTraceTime(Info, gc) tm(young_gc_name, NULL, gc_cause(), true);
+    GCTraceTime(Info, gc) tm(young_gc_name(), NULL, gc_cause(), true);
 
     uint active_workers = WorkerPolicy::calc_active_workers(workers()->total_workers(),
                                                             workers()->active_workers(),
@@ -2952,7 +2940,7 @@ void G1CollectedHeap::do_collection_pause_at_safepoint_helper(double target_paus
 
     G1MonitoringScope ms(g1mm(),
                          false /* full_gc */,
-                         collector_state()->in_mixed_phase() /* all_memory_pools_affected */);
+                         collector_state()->yc_type() == Mixed /* all_memory_pools_affected */);
 
     G1HeapTransition heap_transition(this);
 
@@ -3020,10 +3008,6 @@ void G1CollectedHeap::do_collection_pause_at_safepoint_helper(double target_paus
         // evacuation, eventually aborting it.
         concurrent_operation_is_full_mark = policy()->concurrent_operation_is_full_mark("Revise IHOP");
 
-        // Need to report the collection pause now since record_collection_pause_end()
-        // modifies it to the next state.
-        _gc_tracer_stw->report_young_gc_pause(collector_state()->young_gc_pause_type(concurrent_operation_is_full_mark));
-
         double sample_end_time_sec = os::elapsedTime();
         double pause_time_ms = (sample_end_time_sec - sample_start_time_sec) * MILLIUNITS;
         policy()->record_collection_pause_end(pause_time_ms, concurrent_operation_is_full_mark);
@@ -3058,7 +3042,10 @@ void G1CollectedHeap::do_collection_pause_at_safepoint_helper(double target_paus
     // before any GC notifications are raised.
     g1mm()->update_sizes();
 
-    gc_tracer_report_gc_end(concurrent_operation_is_full_mark, evacuation_info);
+    _gc_tracer_stw->report_evacuation_info(&evacuation_info);
+    _gc_tracer_stw->report_tenuring_threshold(_policy->tenuring_threshold());
+    _gc_timer_stw->register_gc_end();
+    _gc_tracer_stw->report_gc_end(_gc_timer_stw->gc_end(), _gc_timer_stw->time_partitions());
   }
   // It should now be safe to tell the concurrent mark thread to start
   // without its logging output interfering with the logging output
@@ -3325,98 +3312,77 @@ public:
   }
 };
 
-// Parallel Reference Processing closures
-
-// Implementation of AbstractRefProcTaskExecutor for parallel reference
-// processing during G1 evacuation pauses.
-
-class G1STWRefProcTaskExecutor: public AbstractRefProcTaskExecutor {
-private:
-  G1CollectedHeap*          _g1h;
-  G1ParScanThreadStateSet*  _pss;
-  G1ScannerTasksQueueSet*   _queues;
-  WorkGang*                 _workers;
-
-public:
-  G1STWRefProcTaskExecutor(G1CollectedHeap* g1h,
-                           G1ParScanThreadStateSet* per_thread_states,
-                           WorkGang* workers,
-                           G1ScannerTasksQueueSet *task_queues) :
-    _g1h(g1h),
-    _pss(per_thread_states),
-    _queues(task_queues),
-    _workers(workers)
-  {
-    g1h->ref_processor_stw()->set_active_mt_degree(workers->active_workers());
-  }
-
-  // Executes the given task using concurrent marking worker threads.
-  virtual void execute(ProcessTask& task, uint ergo_workers);
-};
-
-// Gang task for possibly parallel reference processing
-
-class G1STWRefProcTaskProxy: public AbstractGangTask {
-  typedef AbstractRefProcTaskExecutor::ProcessTask ProcessTask;
-  ProcessTask&     _proc_task;
-  G1CollectedHeap* _g1h;
-  G1ParScanThreadStateSet* _pss;
-  G1ScannerTasksQueueSet* _task_queues;
-  TaskTerminator* _terminator;
+class G1STWRefProcClosureContext : public AbstractRefProcClosureContext {
+  uint _max_workers;
+  uint _queues;
+  G1CollectedHeap& _g1h;
+  G1ParScanThreadStateSet& _pss;
+  G1ScannerTasksQueueSet& _task_queues;
+  TaskTerminator _terminator;
+  G1STWIsAliveClosure _is_alive;
+  G1CopyingKeepAliveClosure* _keep_alive;
+  G1ParEvacuateFollowersClosure* _parallel_complete_gc;
+  G1CopyingKeepAliveClosure _serial_keep_alive;
+  G1STWDrainQueueClosure _serial_complete_gc;
+  RefProcThreadModel _tm;
 
 public:
-  G1STWRefProcTaskProxy(ProcessTask& proc_task,
-                        G1CollectedHeap* g1h,
-                        G1ParScanThreadStateSet* per_thread_states,
-                        G1ScannerTasksQueueSet *task_queues,
-                        TaskTerminator* terminator) :
-    AbstractGangTask("Process reference objects in parallel"),
-    _proc_task(proc_task),
-    _g1h(g1h),
-    _pss(per_thread_states),
-    _task_queues(task_queues),
-    _terminator(terminator)
-  {}
+  G1STWRefProcClosureContext(uint max_workers,
+                             G1CollectedHeap& g1h,
+                             G1ParScanThreadStateSet& pss,
+                             G1ScannerTasksQueueSet& task_queues)
+    : _max_workers(max_workers),
+      _queues(0),
+      _g1h(g1h),
+      _pss(pss),
+      _task_queues(task_queues),
+      _terminator(_max_workers, &task_queues),
+      _is_alive(&g1h),
+      _keep_alive(NEW_C_HEAP_ARRAY(G1CopyingKeepAliveClosure, _max_workers, mtGC)),
+      _parallel_complete_gc(NEW_C_HEAP_ARRAY(G1ParEvacuateFollowersClosure, _max_workers, mtGC)),
+      _serial_keep_alive(&g1h, _pss.state_for_worker(0)),
+      _serial_complete_gc(&g1h, _pss.state_for_worker(0)),
+      _tm(RefProcThreadModel::Single) {}
 
-  virtual void work(uint worker_id) {
-    // The reference processing task executed by a single worker.
-    ResourceMark rm;
-
-    G1STWIsAliveClosure is_alive(_g1h);
-
-    G1ParScanThreadState* pss = _pss->state_for_worker(worker_id);
-    pss->set_ref_discoverer(NULL);
-
-    // Keep alive closure.
-    G1CopyingKeepAliveClosure keep_alive(_g1h, pss);
-
-    // Complete GC closure
-    G1ParEvacuateFollowersClosure drain_queue(_g1h, pss, _task_queues, _terminator, G1GCPhaseTimes::ObjCopy);
-
-    // Call the reference processing task's work routine.
-    _proc_task.work(worker_id, is_alive, keep_alive, drain_queue);
-
-    // Note we cannot assert that the refs array is empty here as not all
-    // of the processing tasks (specifically phase2 - pp2_work) execute
-    // the complete_gc closure (which ordinarily would drain the queue) so
-    // the queue may not be empty.
+  ~G1STWRefProcClosureContext() {
+    FREE_C_HEAP_ARRAY(G1CopyingKeepAliveClosure, _keep_alive);
+    FREE_C_HEAP_ARRAY(G1ParEvacuateFollowersClosure, _parallel_complete_gc);
   }
+
+  BoolObjectClosure* is_alive(uint worker_id) {
+    return &_is_alive;
+  }
+
+  OopClosure* keep_alive(uint worker_id) {
+    assert(worker_id < _queues || _tm == RefProcThreadModel::Single, "sanity");
+    if (_tm == RefProcThreadModel::Single) {
+      return &_serial_keep_alive;
+    } else {
+      return ::new (&_keep_alive[worker_id]) G1CopyingKeepAliveClosure(&_g1h, _pss.state_for_worker(worker_id));
+    }
+  }
+
+  VoidClosure* complete_gc(uint worker_id) {
+    assert(worker_id < _queues || _tm == RefProcThreadModel::Single, "sanity");
+    if (_tm == RefProcThreadModel::Single) {
+      return &_serial_complete_gc;
+    } else {
+      return ::new (&_parallel_complete_gc[worker_id]) G1ParEvacuateFollowersClosure(&_g1h, _pss.state_for_worker(worker_id), &_task_queues, &_terminator, G1GCPhaseTimes::ObjCopy);
+    }
+  }
+
+  void prepare_run_task(uint queue_count, RefProcThreadModel tm, bool marks_oops_alive) {
+    log_debug(gc, ref)("G1STWRefProcClosureContext: prepare_run_task");
+    assert(queue_count <= _max_workers, "sanity");
+    _queues = queue_count;
+    _tm = tm;
+
+    for (uint qid = 0; qid < index(queue_count, tm); ++qid ) {
+      _pss.state_for_worker(qid)->set_ref_discoverer(nullptr);
+    }
+    _terminator.reset_for_reuse(queue_count);
+  };
 };
-
-// Driver routine for parallel reference processing.
-// Creates an instance of the ref processing gang
-// task and has the worker threads execute it.
-void G1STWRefProcTaskExecutor::execute(ProcessTask& proc_task, uint ergo_workers) {
-  assert(_workers != NULL, "Need parallel worker threads.");
-
-  assert(_workers->active_workers() >= ergo_workers,
-         "Ergonomically chosen workers (%u) should be less than or equal to active workers (%u)",
-         ergo_workers, _workers->active_workers());
-  TaskTerminator terminator(ergo_workers, _queues);
-  G1STWRefProcTaskProxy proc_task_proxy(proc_task, _g1h, _pss, _queues, &terminator);
-
-  _workers->run_task(&proc_task_proxy, ergo_workers);
-}
 
 // End of weak reference support closures
 
@@ -3426,53 +3392,27 @@ void G1CollectedHeap::process_discovered_references(G1ParScanThreadStateSet* per
   ReferenceProcessor* rp = _ref_processor_stw;
   assert(rp->discovery_enabled(), "should have been enabled");
 
-  // Closure to test whether a referent is alive.
-  G1STWIsAliveClosure is_alive(this);
-
-  // Even when parallel reference processing is enabled, the processing
-  // of JNI refs is serial and performed serially by the current thread
-  // rather than by a worker. The following PSS will be used for processing
-  // JNI refs.
-
   // Use only a single queue for this PSS.
   G1ParScanThreadState*          pss = per_thread_states->state_for_worker(0);
   pss->set_ref_discoverer(NULL);
   assert(pss->queue_is_empty(), "pre-condition");
 
-  // Keep alive closure.
-  G1CopyingKeepAliveClosure keep_alive(this, pss);
-
-  // Serial Complete GC closure
-  G1STWDrainQueueClosure drain_queue(this, pss);
-
   // Setup the soft refs policy...
   rp->setup_policy(false);
 
-  ReferenceProcessorPhaseTimes* pt = phase_times()->ref_phase_times();
+  ReferenceProcessorPhaseTimes& pt = *phase_times()->ref_phase_times();
 
   ReferenceProcessorStats stats;
-  if (!rp->processing_is_mt()) {
-    // Serial reference processing...
-    stats = rp->process_discovered_references(&is_alive,
-                                              &keep_alive,
-                                              &drain_queue,
-                                              NULL,
-                                              pt);
-  } else {
-    uint no_of_gc_workers = workers()->active_workers();
+  uint no_of_gc_workers = workers()->active_workers();
 
-    // Parallel reference processing
-    assert(no_of_gc_workers <= rp->max_num_queues(),
-           "Mismatch between the number of GC workers %u and the maximum number of Reference process queues %u",
-           no_of_gc_workers,  rp->max_num_queues());
+  // Parallel reference processing
+  assert(no_of_gc_workers <= rp->max_num_queues(),
+         "Mismatch between the number of GC workers %u and the maximum number of Reference process queues %u",
+         no_of_gc_workers,  rp->max_num_queues());
 
-    G1STWRefProcTaskExecutor par_task_executor(this, per_thread_states, workers(), _task_queues);
-    stats = rp->process_discovered_references(&is_alive,
-                                              &keep_alive,
-                                              &drain_queue,
-                                              &par_task_executor,
-                                              pt);
-  }
+  rp->set_active_mt_degree(no_of_gc_workers);
+  G1STWRefProcClosureContext context(rp->max_num_queues(), *this, *per_thread_states, *_task_queues);
+  stats = rp->process_discovered_references(context, pt);
 
   _gc_tracer_stw->report_gc_reference_stats(stats);
 
@@ -3514,7 +3454,7 @@ class G1PrepareEvacuationTask : public AbstractGangTask {
     bool humongous_region_is_candidate(HeapRegion* region) const {
       assert(region->is_starts_humongous(), "Must start a humongous object");
 
-      oop obj = cast_to_oop(region->bottom());
+      oop obj = oop(region->bottom());
 
       // Dead objects cannot be eager reclaim candidates. Due to class
       // unloading it is unsafe to query their classes so we return early.
@@ -3979,8 +3919,6 @@ void G1CollectedHeap::post_evacuate_collection_set(G1EvacuationInfo& evacuation_
 
   eagerly_reclaim_humongous_regions();
 
-  rebuild_free_region_list();
-
   record_obj_copy_mem_stats();
 
   evacuation_info.set_collectionset_used_before(collection_set()->bytes_used_before());
@@ -4332,17 +4270,21 @@ void G1CollectedHeap::free_collection_set(G1CollectionSet* collection_set, G1Eva
   Ticks free_cset_end_time = Ticks::now();
   phase_times()->record_total_free_cset_time_ms((free_cset_end_time - free_cset_start_time).seconds() * 1000.0);
 
+  // Now rebuild the free region list.
+  _hrm.rebuild_free_list(workers());
+  phase_times()->record_total_rebuild_freelist_time_ms((Ticks::now() - free_cset_end_time).seconds() * 1000.0);
+
   collection_set->clear();
 }
 
 class G1FreeHumongousRegionClosure : public HeapRegionClosure {
-private:
+ private:
   FreeRegionList* _free_region_list;
   HeapRegionSet* _proxy_set;
   uint _humongous_objects_reclaimed;
   uint _humongous_regions_reclaimed;
   size_t _freed_bytes;
-public:
+ public:
 
   G1FreeHumongousRegionClosure(FreeRegionList* free_region_list) :
     _free_region_list(free_region_list), _proxy_set(NULL), _humongous_objects_reclaimed(0), _humongous_regions_reclaimed(0), _freed_bytes(0) {
@@ -4355,7 +4297,7 @@ public:
 
     G1CollectedHeap* g1h = G1CollectedHeap::heap();
 
-    oop obj = cast_to_oop(r->bottom());
+    oop obj = (oop)r->bottom();
     G1CMBitMap* next_bitmap = g1h->concurrent_mark()->next_mark_bitmap();
 
     // The following checks whether the humongous object is live are sufficient.
@@ -4477,16 +4419,11 @@ void G1CollectedHeap::eagerly_reclaim_humongous_regions() {
     }
   }
 
+  prepend_to_freelist(&local_cleanup_list);
   decrement_summary_bytes(cl.bytes_freed());
 
   phase_times()->record_fast_reclaim_humongous_time_ms((os::elapsedTime() - start_time) * 1000.0,
                                                        cl.humongous_objects_reclaimed());
-}
-
-void G1CollectedHeap::rebuild_free_region_list() {
-  Ticks start = Ticks::now();
-  _hrm.rebuild_free_list(workers());
-  phase_times()->record_total_rebuild_freelist_time_ms((Ticks::now() - start).seconds() * 1000.0);
 }
 
 class G1AbandonCollectionSetClosure : public HeapRegionClosure {

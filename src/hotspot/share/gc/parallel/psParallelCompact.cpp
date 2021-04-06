@@ -534,7 +534,6 @@ void ParallelCompactData::add_obj(HeapWord* addr, size_t len)
 {
   const size_t obj_ofs = pointer_delta(addr, _region_start);
   const size_t beg_region = obj_ofs >> Log2RegionSize;
-  // end_region is inclusive
   const size_t end_region = (obj_ofs + len - 1) >> Log2RegionSize;
 
   DEBUG_ONLY(Atomic::inc(&add_obj_count);)
@@ -550,6 +549,7 @@ void ParallelCompactData::add_obj(HeapWord* addr, size_t len)
   const size_t beg_ofs = region_offset(addr);
   _region_data[beg_region].add_live_obj(RegionSize - beg_ofs);
 
+  Klass* klass = ((oop)addr)->klass();
   // Middle regions--completely spanned by this object.
   for (size_t region = beg_region + 1; region < end_region; ++region) {
     _region_data[region].set_partial_obj_size(RegionSize);
@@ -565,8 +565,8 @@ void ParallelCompactData::add_obj(HeapWord* addr, size_t len)
 void
 ParallelCompactData::summarize_dense_prefix(HeapWord* beg, HeapWord* end)
 {
-  assert(is_region_aligned(beg), "not RegionSize aligned");
-  assert(is_region_aligned(end), "not RegionSize aligned");
+  assert(region_offset(beg) == 0, "not RegionSize aligned");
+  assert(region_offset(end) == 0, "not RegionSize aligned");
 
   size_t cur_region = addr_to_region_idx(beg);
   const size_t end_region = addr_to_region_idx(end);
@@ -762,7 +762,7 @@ bool ParallelCompactData::summarize(SplitInfo& split_info,
         destination_count += 1;
         // Data from cur_region will be copied to the start of dest_region_2.
         _region_data[dest_region_2].set_source_region(cur_region);
-      } else if (is_region_aligned(dest_addr)) {
+      } else if (region_offset(dest_addr) == 0) {
         // Data from cur_region will be copied to the start of the destination
         // region.
         _region_data[dest_region_1].set_source_region(cur_region);
@@ -817,7 +817,7 @@ HeapWord* ParallelCompactData::calc_new_pointer(HeapWord* addr, ParCompactionMan
   const size_t block_offset = addr_to_block_ptr(addr)->offset();
 
   const ParMarkBitMap* bitmap = PSParallelCompact::mark_bitmap();
-  const size_t live = bitmap->live_words_in_range(cm, search_start, cast_to_oop(addr));
+  const size_t live = bitmap->live_words_in_range(cm, search_start, oop(addr));
   result += block_offset + live;
   DEBUG_ONLY(PSParallelCompact::check_new_location(addr, result));
   return result;
@@ -2023,7 +2023,7 @@ static void mark_from_roots_work(ParallelRootType::Value root_type, uint worker_
   cm->follow_marking_stacks();
 }
 
-static void steal_marking_work(TaskTerminator& terminator, uint worker_id) {
+void steal_marking_work(TaskTerminator& terminator, uint worker_id) {
   assert(ParallelScavengeHeap::heap()->is_gc_active(), "called outside gc");
 
   ParCompactionManager* cm =
@@ -2044,7 +2044,6 @@ static void steal_marking_work(TaskTerminator& terminator, uint worker_id) {
 }
 
 class MarkFromRootsTask : public AbstractGangTask {
-  typedef AbstractRefProcTaskExecutor::ProcessTask ProcessTask;
   StrongRootsScope _strong_roots_scope; // needed for Threads::possibly_parallel_threads_do
   OopStorageSetStrongParState<false /* concurrent */, false /* is_const */> _oop_storage_set_par_state;
   SequentialSubTasksDone _subtasks;
@@ -2086,44 +2085,46 @@ public:
   }
 };
 
-class PCRefProcTask : public AbstractGangTask {
-  typedef AbstractRefProcTaskExecutor::ProcessTask ProcessTask;
-  ProcessTask& _task;
-  uint _ergo_workers;
+class ParallelCompactRefProcClosureContext : public AbstractRefProcClosureContext {
+  uint _max_workers;
   TaskTerminator _terminator;
+  PCMarkAndPushClosure* _keep_alive;
+  ParCompactionManager::FollowStackClosure* _complete_gc;
+  RefProcThreadModel _tm;
 
 public:
-  PCRefProcTask(ProcessTask& task, uint ergo_workers) :
-      AbstractGangTask("PCRefProcTask"),
-      _task(task),
-      _ergo_workers(ergo_workers),
-      _terminator(_ergo_workers, ParCompactionManager::oop_task_queues()) {
+  ParallelCompactRefProcClosureContext(uint max_workers)
+    : _max_workers(max_workers),
+      _terminator(_max_workers, ParCompactionManager::oop_task_queues()),
+      _keep_alive(NEW_C_HEAP_ARRAY(PCMarkAndPushClosure, _max_workers, mtGC)),
+      _complete_gc(NEW_C_HEAP_ARRAY(ParCompactionManager::FollowStackClosure, _max_workers, mtGC)),
+      _tm(RefProcThreadModel::Single) {}
+
+  ~ParallelCompactRefProcClosureContext() {
+    FREE_C_HEAP_ARRAY(PCMarkAndPushClosure, _keep_alive);
+    FREE_C_HEAP_ARRAY(ParCompactionManager::FollowStackClosure, _complete_gc);
   }
 
-  virtual void work(uint worker_id) {
-    ParallelScavengeHeap* heap = ParallelScavengeHeap::heap();
-    assert(ParallelScavengeHeap::heap()->is_gc_active(), "called outside gc");
-
-    ParCompactionManager* cm =
-      ParCompactionManager::gc_thread_compaction_manager(worker_id);
-    PCMarkAndPushClosure mark_and_push_closure(cm);
-    ParCompactionManager::FollowStackClosure follow_stack_closure(cm);
-    _task.work(worker_id, *PSParallelCompact::is_alive_closure(),
-               mark_and_push_closure, follow_stack_closure);
-
-    steal_marking_work(_terminator, worker_id);
+  BoolObjectClosure* is_alive(uint worker_id) {
+    return PSParallelCompact::is_alive_closure();
   }
-};
 
-class RefProcTaskExecutor: public AbstractRefProcTaskExecutor {
-  void execute(ProcessTask& process_task, uint ergo_workers) {
-    assert(ParallelScavengeHeap::heap()->workers().active_workers() == ergo_workers,
-           "Ergonomically chosen workers (%u) must be equal to active workers (%u)",
-           ergo_workers, ParallelScavengeHeap::heap()->workers().active_workers());
-
-    PCRefProcTask task(process_task, ergo_workers);
-    ParallelScavengeHeap::heap()->workers().run_task(&task);
+  OopClosure* keep_alive(uint worker_id) {
+    ParCompactionManager* cm = ParCompactionManager::gc_thread_compaction_manager(worker_id);
+    return ::new (&_keep_alive[worker_id]) PCMarkAndPushClosure(cm);
   }
+
+  VoidClosure* complete_gc(uint worker_id) {
+    ParCompactionManager* cm = ParCompactionManager::gc_thread_compaction_manager(worker_id);
+    return ::new (&_complete_gc[worker_id]) ParCompactionManager::FollowStackClosure(cm, (_tm == RefProcThreadModel::Single) ? nullptr : &_terminator, worker_id);
+  }
+
+  void prepare_run_task(uint queue_count, RefProcThreadModel tm, bool marks_oops_alive) {
+    log_debug(gc, ref)("ParallelCompactRefProcClosureContext: prepare_run_task");
+    assert(queue_count <= _max_workers, "sanity");
+    _tm = tm;
+   _terminator.reset_for_reuse(queue_count);
+  };
 };
 
 void PSParallelCompact::marking_phase(ParCompactionManager* cm,
@@ -2132,11 +2133,7 @@ void PSParallelCompact::marking_phase(ParCompactionManager* cm,
   // Recursively traverse all live objects and mark them
   GCTraceTime(Info, gc, phases) tm("Marking Phase", &_gc_timer);
 
-  ParallelScavengeHeap* heap = ParallelScavengeHeap::heap();
   uint active_gc_threads = ParallelScavengeHeap::heap()->workers().active_workers();
-
-  PCMarkAndPushClosure mark_and_push_closure(cm);
-  ParCompactionManager::FollowStackClosure follow_stack_closure(cm);
 
   // Need new claim bits before marking starts.
   ClassLoaderDataGraph::clear_claimed_marks();
@@ -2155,18 +2152,9 @@ void PSParallelCompact::marking_phase(ParCompactionManager* cm,
     ReferenceProcessorStats stats;
     ReferenceProcessorPhaseTimes pt(&_gc_timer, ref_processor()->max_num_queues());
 
-    if (ref_processor()->processing_is_mt()) {
-      ref_processor()->set_active_mt_degree(active_gc_threads);
-
-      RefProcTaskExecutor task_executor;
-      stats = ref_processor()->process_discovered_references(
-        is_alive_closure(), &mark_and_push_closure, &follow_stack_closure,
-        &task_executor, &pt);
-    } else {
-      stats = ref_processor()->process_discovered_references(
-        is_alive_closure(), &mark_and_push_closure, &follow_stack_closure, NULL,
-        &pt);
-    }
+    ref_processor()->set_active_mt_degree(active_gc_threads);
+    ParallelCompactRefProcClosureContext context(ref_processor()->max_num_queues());
+    stats = ref_processor()->process_discovered_references(context, pt);
 
     gc_tracer->report_gc_reference_stats(stats);
     pt.print_all_references();
@@ -2557,7 +2545,6 @@ static void compaction_with_stealing_work(TaskTerminator* terminator, uint worke
 }
 
 class UpdateDensePrefixAndCompactionTask: public AbstractGangTask {
-  typedef AbstractRefProcTaskExecutor::ProcessTask ProcessTask;
   TaskQueue& _tq;
   TaskTerminator _terminator;
   uint _active_workers;
@@ -2674,7 +2661,7 @@ void PSParallelCompact::verify_complete(SpaceId space_id) {
 
 inline void UpdateOnlyClosure::do_addr(HeapWord* addr) {
   _start_array->allocate_block(addr);
-  compaction_manager()->update_contents(cast_to_oop(addr));
+  compaction_manager()->update_contents(oop(addr));
 }
 
 // Update interior oops in the ranges of regions [beg_region, end_region).
@@ -2777,8 +2764,8 @@ void PSParallelCompact::update_deferred_objects(ParCompactionManager* cm,
       if (start_array != NULL) {
         start_array->allocate_block(addr);
       }
-      cm->update_contents(cast_to_oop(addr));
-      assert(oopDesc::is_oop_or_null(cast_to_oop(addr)), "Expected an oop or NULL at " PTR_FORMAT, p2i(cast_to_oop(addr)));
+      cm->update_contents(oop(addr));
+      assert(oopDesc::is_oop_or_null(oop(addr)), "Expected an oop or NULL at " PTR_FORMAT, p2i(oop(addr)));
     }
   }
 }
@@ -3298,7 +3285,7 @@ MoveAndUpdateClosure::do_addr(HeapWord* addr, size_t words) {
     Copy::aligned_conjoint_words(source(), copy_destination(), words);
   }
 
-  oop moved_oop = cast_to_oop(copy_destination());
+  oop moved_oop = (oop) copy_destination();
   compaction_manager()->update_contents(moved_oop);
   assert(oopDesc::is_oop_or_null(moved_oop), "Expected an oop or NULL at " PTR_FORMAT, p2i(moved_oop));
 
@@ -3356,7 +3343,7 @@ FillClosure::do_addr(HeapWord* addr, size_t size) {
   HeapWord* const end = addr + size;
   do {
     _start_array->allocate_block(addr);
-    addr += cast_to_oop(addr)->size();
+    addr += oop(addr)->size();
   } while (addr < end);
   return ParMarkBitMap::incomplete;
 }
