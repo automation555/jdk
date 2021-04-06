@@ -22,11 +22,7 @@
  *
  */
 
-
 #include "jvm.h"
-#ifdef LINUX
-#include "classfile/classLoader.hpp"
-#endif
 #include "jvmtifiles/jvmti.h"
 #include "logging/log.hpp"
 #include "memory/allocation.inline.hpp"
@@ -37,12 +33,10 @@
 #include "runtime/frame.inline.hpp"
 #include "runtime/interfaceSupport.inline.hpp"
 #include "runtime/sharedRuntime.hpp"
-#include "services/attachListener.hpp"
 #include "services/memTracker.hpp"
 #include "runtime/atomic.hpp"
 #include "runtime/java.hpp"
 #include "runtime/orderAccess.hpp"
-#include "runtime/perfMemory.hpp"
 #include "utilities/align.hpp"
 #include "utilities/events.hpp"
 #include "utilities/formatBuffer.hpp"
@@ -57,16 +51,11 @@
 #include <signal.h>
 #include <sys/mman.h>
 #include <sys/resource.h>
-#include <sys/types.h>
+#include <sys/shm.h>
 #include <sys/utsname.h>
-#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 #include <utmpx.h>
-
-#ifdef __APPLE__
-  #include <crt_externs.h>
-#endif
 
 #define ROOT_UID 0
 
@@ -545,26 +534,6 @@ bool os::get_host_name(char* buf, size_t buflen) {
   jio_snprintf(buf, buflen, "%s", name.nodename);
   return true;
 }
-
-#ifndef _LP64
-// Helper, on 32bit, for os::has_allocatable_memory_limit
-static bool is_allocatable(size_t s) {
-  if (s < 2 * G) {
-    return true;
-  }
-  // Use raw anonymous mmap here; no need to go through any
-  // of our reservation layers. We will unmap right away.
-  void* p = ::mmap(NULL, s, PROT_NONE,
-                   MAP_PRIVATE | MAP_NORESERVE | MAP_ANONYMOUS, -1, 0);
-  if (p == MAP_FAILED) {
-    return false;
-  } else {
-    ::munmap(p, s);
-    return true;
-  }
-}
-#endif // !_LP64
-
 
 bool os::has_allocatable_memory_limit(size_t* limit) {
   struct rlimit rlim;
@@ -1798,127 +1767,44 @@ int os::PlatformMonitor::wait(jlong millis) {
   }
 }
 
-// Darwin has no "environ" in a dynamic library.
-#ifdef __APPLE__
-  #define environ (*_NSGetEnviron())
-#else
-  extern char** environ;
-#endif
 
-char** os::get_environ() { return environ; }
+/// sbrk protection zone handling ///////////////////////
 
-// Run the specified command in a separate process. Return its exit value,
-// or -1 on failure (e.g. can't fork a new process).
-// Notes: -Unlike system(), this function can be called from signal handler. It
-//         doesn't block SIGINT et al.
-//        -this function is unsafe to use in non-error situations, mainly
-//         because the child process will inherit all parent descriptors.
-int os::fork_and_exec(const char* cmd, bool prefer_vfork) {
-  const char * argv[4] = {"sh", "-c", cmd, NULL};
+#ifndef __APPLE__
 
-  pid_t pid ;
+// We define a zone starting at the initial value for sbrk, with a configurable
+//  length, into which we do not allow the VM to place mappings.
+static const address g_initial_brk = ::sbrk(0);
+static const address g_lowest_mapping_above_initial_brk = (address)SIZE_MAX;
 
-  char** env = os::get_environ();
+static address brk_protection_zone_end() {
+  return MIN2(g_initial_brk + BrkZoneSize,
+              g_lowest_mapping_above_initial_brk);
+}
 
-  // Use always vfork on AIX, since its safe and helps with analyzing OOM situations.
-  // Otherwise leave it up to the caller.
-  AIX_ONLY(prefer_vfork = true;)
-  pid = prefer_vfork ? ::vfork() : ::fork();
+bool os::Posix::is_in_brk_protection_zone(address p) {
+  return p != NULL &&
+         g_initial_brk != (address)-1 &&
+         p >= g_initial_brk && p < brk_protection_zone_end();
+}
 
-  if (pid < 0) {
-    // fork failed
-    return -1;
-
-  } else if (pid == 0) {
-    // child process
-
-    ::execve("/bin/sh", (char* const*)argv, env);
-
-    // execve failed
-    ::_exit(-1);
-
-  } else  {
-    // copied from J2SE ..._waitForProcessExit() in UNIXProcess_md.c; we don't
-    // care about the actual exit code, for now.
-
-    int status;
-
-    // Wait for the child process to exit.  This returns immediately if
-    // the child has already exited. */
-    while (::waitpid(pid, &status, 0) < 0) {
-      switch (errno) {
-      case ECHILD: return 0;
-      case EINTR: break;
-      default: return -1;
-      }
-    }
-
-    if (WIFEXITED(status)) {
-      // The child exited normally; get its exit code.
-      return WEXITSTATUS(status);
-    } else if (WIFSIGNALED(status)) {
-      // The child exited because of a signal
-      // The best value to return is 0x80 + signal number,
-      // because that is what all Unix shells do, and because
-      // it allows callers to distinguish between process exit and
-      // process death by signal.
-      return 0x80 + WTERMSIG(status);
-    } else {
-      // Unknown exit code; pass it through
-      return status;
-    }
+void os::Posix::update_lowest_mapping_above_initial_brk(address p) {
+  // This is to be called for addresses returned by ::mmap or ::shmat with
+  // a NULL wish address: the OS itself may place mappings into what we regard
+  // as protected brk zone, and for those mappings, we need to disable zone
+  // protection to be able to later re-map those addresses.
+  const address brknow = (address)::sbrk(0);
+  if (is_in_brk_protection_zone(p)) {
+    g_lowest_mapping_above_initial_brk = p;
   }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// runtime exit support
-
-// Note: os::shutdown() might be called very early during initialization, or
-// called from signal handler. Before adding something to os::shutdown(), make
-// sure it is async-safe and can handle partially initialized VM.
-void os::shutdown() {
-
-  // allow PerfMemory to attempt cleanup of any persistent resources
-  perfMemory_exit();
-
-  // needs to remove object in file system
-  AttachListener::abort();
-
-  // flush buffered output, finish log files
-  ostream_abort();
-
-  // Check for abort hook
-  abort_hook_t abort_hook = Arguments::abort_hook();
-  if (abort_hook != NULL) {
-    abort_hook();
-  }
-
+void os::Posix::print_brk_info(outputStream* st) {
+  const address brknow = (address)::sbrk(0);
+  st->print_cr("brk initial: " PTR_FORMAT ", now: " PTR_FORMAT " (+" SIZE_FORMAT "k), "
+               "reserved zone end: " PTR_FORMAT,
+               p2i(g_initial_brk), p2i(brknow), (brknow - (address)g_initial_brk) / K,
+               p2i(brk_protection_zone_end()));
 }
 
-// Note: os::abort() might be called very early during initialization, or
-// called from signal handler. Before adding something to os::abort(), make
-// sure it is async-safe and can handle partially initialized VM.
-// Also note we can abort while other threads continue to run, so we can
-// easily trigger secondary faults in those threads. To reduce the likelihood
-// of that we use _exit rather than exit, so that no atexit hooks get run.
-// But note that os::shutdown() could also trigger secondary faults.
-void os::abort(bool dump_core, void* siginfo, const void* context) {
-  os::shutdown();
-  if (dump_core) {
-    LINUX_ONLY(if (DumpPrivateMappingsInCore) ClassLoader::close_jrt_image();)
-    ::abort(); // dump core
-  }
-  ::_exit(1);
-}
-
-// Die immediately, no exit hook, no abort hook, no cleanup.
-// Dump a core file, if possible, for debugging.
-void os::die() {
-  if (TestUnresponsiveErrorHandler && !CreateCoredumpOnCrash) {
-    // For TimeoutInErrorHandlingTest.java, we just kill the VM
-    // and don't take the time to generate a core file.
-    os::signal_raise(SIGKILL);
-  } else {
-    ::abort();
-  }
-}
+#endif // !__APPLE__
