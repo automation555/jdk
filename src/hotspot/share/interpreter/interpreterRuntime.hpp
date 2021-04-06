@@ -45,10 +45,10 @@ class InterpreterRuntime: AllStatic {
 
  private:
 
-  static void      set_bcp_and_mdp(address bcp, JavaThread*thread);
-  static void      note_trap_inner(JavaThread* thread, int reason,
-                                   const methodHandle& trap_method, int trap_bci, TRAPS);
-  static void      note_trap(JavaThread *thread, int reason, TRAPS);
+  static void      set_bcp_and_mdp(address bcp, JavaThread* current);
+  static void      note_trap_inner(JavaThread* current, int reason,
+                                   const methodHandle& trap_method, int trap_bci);
+  static void      note_trap(JavaThread *current, int reason);
 
   // Inner work method for Interpreter's frequency counter overflow.
   static nmethod* frequency_counter_overflow_inner(JavaThread* thread, address branch_bcp);
@@ -150,7 +150,7 @@ class InterpreterRuntime: AllStatic {
   static uint64_t normalize_fast_native_fingerprint(uint64_t fingerprint);
 
   // Interpreter's frequency counter overflow
-  static nmethod* frequency_counter_overflow(JavaThread* thread, address branch_bcp);
+  static nmethod* frequency_counter_overflow(JavaThread* current, address branch_bcp);
 
   // Interpreter profiling support
   static jint    bcp_to_di(Method* method, address cur_bcp);
@@ -158,7 +158,7 @@ class InterpreterRuntime: AllStatic {
 #ifdef ASSERT
   static void    verify_mdp(Method* method, address bcp, address mdp);
 #endif // ASSERT
-  static MethodCounters* build_method_counters(JavaThread* current, Method* m);
+  static MethodCounters* build_method_counters(JavaThread* thread, Method* m);
 };
 
 
