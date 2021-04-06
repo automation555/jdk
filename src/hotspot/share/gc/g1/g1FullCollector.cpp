@@ -32,11 +32,9 @@
 #include "gc/g1/g1FullGCMarker.inline.hpp"
 #include "gc/g1/g1FullGCMarkTask.hpp"
 #include "gc/g1/g1FullGCPrepareTask.hpp"
-#include "gc/g1/g1FullGCReferenceProcessorExecutor.hpp"
 #include "gc/g1/g1FullGCScope.hpp"
 #include "gc/g1/g1OopClosures.hpp"
 #include "gc/g1/g1Policy.hpp"
-#include "gc/g1/g1RegionMarkStatsCache.inline.hpp"
 #include "gc/g1/g1StringDedup.hpp"
 #include "gc/shared/gcTraceTime.inline.hpp"
 #include "gc/shared/preservedMarks.hpp"
@@ -123,14 +121,8 @@ G1FullCollector::G1FullCollector(G1CollectedHeap* heap, bool explicit_gc, bool c
   _preserved_marks_set.init(_num_workers);
   _markers = NEW_C_HEAP_ARRAY(G1FullGCMarker*, _num_workers, mtGC);
   _compaction_points = NEW_C_HEAP_ARRAY(G1FullGCCompactionPoint*, _num_workers, mtGC);
-
-  _live_stats = NEW_C_HEAP_ARRAY(G1RegionMarkStats, _heap->max_regions(), mtGC);
-  for (uint j = 0; j < heap->max_regions(); j++) {
-    _live_stats[j].clear();
-  }
-
   for (uint i = 0; i < _num_workers; i++) {
-    _markers[i] = new G1FullGCMarker(this, i, _preserved_marks_set.get(i), _live_stats);
+    _markers[i] = new G1FullGCMarker(this, i, _preserved_marks_set.get(i));
     _compaction_points[i] = new G1FullGCCompactionPoint();
     _oop_queue_set.register_queue(i, marker(i)->oop_stack());
     _array_queue_set.register_queue(i, marker(i)->objarray_stack());
@@ -145,7 +137,6 @@ G1FullCollector::~G1FullCollector() {
   }
   FREE_C_HEAP_ARRAY(G1FullGCMarker*, _markers);
   FREE_C_HEAP_ARRAY(G1FullGCCompactionPoint*, _compaction_points);
-  FREE_C_HEAP_ARRAY(G1RegionMarkStats, _live_stats);
 }
 
 class PrepareRegionsClosure : public HeapRegionClosure {
@@ -238,6 +229,47 @@ void G1FullCollector::update_attribute_table(HeapRegion* hr) {
   }
 }
 
+class G1FullGCRefProcClosureContext : public AbstractRefProcClosureContext {
+  uint _max_workers;
+  G1FullCollector& _collector;
+  G1IsAliveClosure _is_alive;
+  G1FullKeepAliveClosure* _keep_alive;
+  RefProcThreadModel _tm;
+
+public:
+  G1FullGCRefProcClosureContext(G1FullCollector& collector, uint max_workers)
+    : _max_workers(max_workers),
+      _collector(collector),
+      _is_alive(&collector),
+      _keep_alive(NEW_C_HEAP_ARRAY(G1FullKeepAliveClosure, max_workers, mtGC)),
+      _tm(RefProcThreadModel::Single) {}
+
+  ~G1FullGCRefProcClosureContext() {
+    FREE_C_HEAP_ARRAY(G1FullKeepAliveClosure, _keep_alive);
+  }
+
+  BoolObjectClosure* is_alive(uint worker_id) {
+    assert(worker_id < _max_workers, "sanity");
+    return &_is_alive;
+  }
+
+  OopClosure* keep_alive(uint worker_id) {
+    assert(worker_id < _max_workers, "sanity");
+    return ::new (&_keep_alive[index(worker_id, _tm)]) G1FullKeepAliveClosure(_collector.marker(index(worker_id, _tm)));
+  };
+
+  VoidClosure* complete_gc(uint worker_id) {
+    assert(worker_id < _max_workers, "sanity");
+    return _collector.marker(index(worker_id, _tm))->stack_closure();
+  }
+
+  void prepare_run_task(uint queue_count, RefProcThreadModel tm, bool marks_oops_alive) {
+    log_debug(gc, ref)("G1FullGCRefProcClosureContext: prepare_run_task");
+    assert(queue_count <= _max_workers, "sanity");
+    _tm = tm;
+  };
+};
+
 void G1FullCollector::phase1_mark_live_objects() {
   // Recursively traverse all live objects and mark them.
   GCTraceTime(Info, gc, phases) info("Phase 1: Mark live objects", scope()->timer());
@@ -249,9 +281,18 @@ void G1FullCollector::phase1_mark_live_objects() {
   }
 
   {
-    // Process references discovered during marking.
-    G1FullGCReferenceProcessingExecutor reference_processing(this);
-    reference_processing.execute(scope()->timer(), scope()->tracer());
+    uint old_active_mt_degree = reference_processor()->num_queues();
+    reference_processor()->set_active_mt_degree(workers());
+    GCTraceTime(Debug, gc, phases) debug("Phase 1: Reference Processing", scope()->timer());
+    // Process reference objects found during marking.
+    ReferenceProcessorPhaseTimes pt(scope()->timer(), reference_processor()->max_num_queues());
+    G1FullGCRefProcClosureContext context(*this, reference_processor()->max_num_queues());
+    const ReferenceProcessorStats& stats = reference_processor()->process_discovered_references(context, pt);
+    scope()->tracer()->report_gc_reference_stats(stats);
+    pt.print_all_references();
+    assert(marker(0)->oop_stack()->is_empty(), "Should be no oops on the stack");
+
+    reference_processor()->set_active_mt_degree(old_active_mt_degree);
   }
 
   // Weak oops cleanup.

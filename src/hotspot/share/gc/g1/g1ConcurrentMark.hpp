@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -72,7 +72,7 @@ public:
 
   oop obj() const {
     assert(!is_array_slice(), "Trying to read array slice " PTR_FORMAT " as oop", p2i(_holder));
-    return cast_to_oop(_holder);
+    return (oop)_holder;
   }
 
   HeapWord* slice() const {
@@ -278,15 +278,14 @@ public:
 // This class manages data structures and methods for doing liveness analysis in
 // G1's concurrent cycle.
 class G1ConcurrentMark : public CHeapObj<mtGC> {
-  friend class G1ConcurrentMarkThread;
-  friend class G1CMRefProcTaskProxy;
-  friend class G1CMRefProcTaskExecutor;
-  friend class G1CMKeepAliveAndDrainClosure;
-  friend class G1CMDrainMarkingStackClosure;
   friend class G1CMBitMapClosure;
   friend class G1CMConcurrentMarkingTask;
+  friend class G1CMDrainMarkingStackClosure;
+  friend class G1CMKeepAliveAndDrainClosure;
+  friend class G1CMRefProcClosureContext;
   friend class G1CMRemarkTask;
   friend class G1CMTask;
+  friend class G1ConcurrentMarkThread;
 
   G1ConcurrentMarkThread* _cm_thread;     // The thread doing the work
   G1CollectedHeap*        _g1h;           // The heap
@@ -610,6 +609,10 @@ private:
     // Initial value for the hash seed, used in the work stealing code
     init_hash_seed                = 17
   };
+
+  // Number of entries in the per-task stats entry. This seems enough to have a very
+  // low cache miss rate.
+  static const uint RegionMarkStatsCacheSize = 1024;
 
   G1CMObjArrayProcessor       _objArray_processor;
 
