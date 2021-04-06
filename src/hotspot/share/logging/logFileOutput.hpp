@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,10 +32,12 @@ class LogDecorations;
 
 // The log file output, with support for file rotation based on a target size.
 class LogFileOutput : public LogFileStreamOutput {
+  friend class AsyncLogMessage;
  private:
   static const char* const FileOpenMode;
   static const char* const FileCountOptionKey;
   static const char* const FileSizeOptionKey;
+  static const char* const AsyncOptionKey;
   static const char* const PidFilenamePlaceholder;
   static const char* const TimestampFilenamePlaceholder;
   static const char* const TimestampFormat;
@@ -55,6 +57,7 @@ class LogFileOutput : public LogFileStreamOutput {
   uint  _file_count;
   uint  _file_count_max_digits;
   bool  _is_default_file_count;
+  bool  _async_mode;
 
   size_t  _archive_name_len;
   size_t  _rotate_size;
@@ -79,6 +82,7 @@ class LogFileOutput : public LogFileStreamOutput {
     }
   }
 
+  int write_blocking(const LogDecorations& decorations, const char* msg);
  public:
   LogFileOutput(const char *name);
   virtual ~LogFileOutput();
