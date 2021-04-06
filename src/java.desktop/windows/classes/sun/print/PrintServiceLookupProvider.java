@@ -116,6 +116,7 @@ public class PrintServiceLookupProvider extends PrintServiceLookup {
         if (printers == null) {
             // In Windows it is safe to assume no default if printers == null so we
             // don't get the default.
+            invalidateServices();
             printServices = new PrintService[0];
             return;
         }
@@ -146,6 +147,11 @@ public class PrintServiceLookupProvider extends PrintServiceLookup {
             }
         }
 
+        invalidateServices();
+        printServices = newServices;
+    }
+
+    private void invalidateServices() {
         // Look for deleted services and invalidate these
         if (printServices != null) {
             for (int j=0; j < printServices.length; j++) {
@@ -155,7 +161,6 @@ public class PrintServiceLookupProvider extends PrintServiceLookup {
                 }
             }
         }
-        printServices = newServices;
     }
 
 
