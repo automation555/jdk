@@ -271,14 +271,17 @@ bool PosixSignals::pd_hotspot_signal_handler(int sig, siginfo_t* info,
       else
 
 #ifdef AMD64
-      if (sig == SIGFPE  &&
-          (info->si_code == FPE_INTDIV || info->si_code == FPE_FLTDIV)) {
+      if (sig == SIGFPE && info->si_code == FPE_INTDIV) {
         stub =
           SharedRuntime::
           continuation_for_implicit_exception(thread,
                                               pc,
                                               SharedRuntime::
                                               IMPLICIT_DIVIDE_BY_ZERO);
+      } else if (sig == SIGFPE &&
+                  (info->si_code >= FPE_FLTDIV && info->si_code <= FPE_FLTSUB)) {
+        tty->print_cr("\nUnexpected si_code %d (of type FPE_FLT...) with SIGFPE.\n", info->si_code);
+        assert(false, "Unexpected FPE_FLT signal, this is probably a bug in the OS");
 #else
       if (sig == SIGFPE /* && info->si_code == FPE_INTDIV */) {
         // HACK: si_code does not work on linux 2.2.12-20!!!
@@ -476,6 +479,26 @@ juint os::cpu_microcode_revision() {
     fclose(fp);
   }
   return result;
+}
+
+bool os::is_allocatable(size_t bytes) {
+#ifdef AMD64
+  // unused on amd64?
+  return true;
+#else
+
+  if (bytes < 2 * G) {
+    return true;
+  }
+
+  char* addr = reserve_memory(bytes);
+
+  if (addr != NULL) {
+    release_memory(addr, bytes);
+  }
+
+  return addr != NULL;
+#endif // AMD64
 }
 
 ////////////////////////////////////////////////////////////////////////////////
