@@ -23,42 +23,36 @@
  * questions.
  */
 
-#import "StaticTextAccessibility.h"
+#import "NavigableStaticTextAccessibility.h"
 
-@implementation StaticTextAccessibility
-
-- (nullable NSString *)accessibilityAttributedStringForRange:(NSRange)range
+@implementation NavigableStaticTextAccessibility
+- (NSRect)accessibilityFrameForRange:(NSRange)range
 {
-    NSLog(@"in StaticTextAccessibility accessibilityAttributedStringForRange");
-    return [self accessibilityStringForRangeAttribute:range];
+    NSLog(@"in NavigableStaticTextAccessibility accessibilityFrameForRange");
+    NSRect rect = [self accessibilityBoundsForRangeAttribute:range];
+    //NSLog(@"Frame for range %@ is %@", NSStringFromRange(range), NSStringFromRect(rect));
+    return rect;
 }
-
-- (nullable NSString *)accessibilityValue
+- (int)accessibilityLineForIndex:(int)index
 {
-    NSLog(@"in StaticTextAccessibility accessibilityValue");
-    return [self accessibilityValueAttribute];
+    NSLog(@"in NavigableStaticTextAccessibility accessibilityLineForIndex");
+    int line = [self accessibilityLineForIndexAttribute:index];
+    //NSLog(@"Line number for index %d is: %d", index, line);
+    return line;
 }
-
-- (NSRange)accessibilityVisibleCharacterRange
+- (NSRange)accessibilityRangeForLine:(int)line
 {
-    NSLog(@"in StaticTextAccessibility accessibilityVisibleCharacterRange");
-    return [self accessibilityVisibleCharacterRangeAttribute];
-}
-
-- (NSRange) accessibilityRangeForPoint:(NSPoint)point
-{
-    NSLog(@"in StaticTextAccessibility accessibilityRangeForPoint");
-    NSRange range = [self accessibilityRangeForPositionAttribute:point];
-    NSLog(@"String  for point %@ is %@", NSStringFromRange(range), NSStringFromPoint(point));
+    NSLog(@"in NavigableStaticTextAccessibility accessibilityRangeForLine");
+    NSRange range = [self accessibilityRangeForLineAttribute:line];
+    //NSLog(@"Range for line %d is %@", line, NSStringFromRange(range));
     return range;
 }
-
-- (NSRange)accessibilityRangeForIndex:(int)index
+- (nullable NSString *)accessibilityStringForRange:(NSRange)range
 {
-    NSLog(@"in StaticTextAccessibility accessibilityRangeForIndex");
-    NSRange range = [self accessibilityRangeForIndexAttribute:index];
-    //NSLog(@"String  for index %d is %@", index, NSStringFromRange(range));
-    return range;
+    NSLog(@"in NavigableStaticTextAccessibility accessibilityStringForRange");
+    NSString * str = [self accessibilityStringForRangeAttribute:range];
+    //NSLog(@"String  for range %@ is %@", NSStringFromRange(range), str);
+    return str;
 }
 
 @end

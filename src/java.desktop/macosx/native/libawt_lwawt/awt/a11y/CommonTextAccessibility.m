@@ -138,4 +138,87 @@ static NSRange javaIntArrayToNSRange(JNIEnv* env, jintArray array) {
     return str;
 }
 
+- (NSRect)accessibilityBoundsForRangeAttribute:(NSRange)range
+{
+    JNIEnv *env = [ThreadUtilities getJNIEnv];
+    GET_CACCESSIBLETEXT_CLASS_RETURN(DEFAULT_RECT);
+    DECLARE_STATIC_METHOD_RETURN(jm_getBoundsForRange, sjc_CAccessibleText, "getBoundsForRange",
+                         "(Ljavax/accessibility/Accessible;Ljava/awt/Component;II)[D", NSMakeRect(0, 0, 0, 0));
+    jdoubleArray axBounds = (jdoubleArray)(*env)->CallStaticObjectMethod(env, sjc_CAccessibleText, jm_getBoundsForRange,
+                              fAccessible, fComponent, range.location, range.length);
+    CHECK_EXCEPTION();
+    if (axBounds == NULL) return DEFAULT_RECT;
+
+    jdouble *values = (*env)->GetDoubleArrayElements(env, axBounds, 0);
+    CHECK_EXCEPTION();
+    if (values == NULL) {
+        NSLog(@"%s failed calling GetDoubleArrayElements", __FUNCTION__);
+        return DEFAULT_RECT;
+    };
+    NSRect bounds;
+    bounds.origin.x = values[0];
+    bounds.origin.y = [[[[self view] window] screen] frame].size.height - values[1] - values[3];
+    bounds.size.width = values[2];
+    bounds.size.height = values[3];
+    return bounds;
+}
+
+- (int)accessibilityLineForIndexAttribute:(int)index
+{
+    JNIEnv *env = [ThreadUtilities getJNIEnv];
+    GET_CACCESSIBLETEXT_CLASS_RETURN(-1);
+    DECLARE_STATIC_METHOD_RETURN(jm_getLineNumberForIndex, sjc_CAccessibleText, "getLineNumberForIndex",
+                           "(Ljavax/accessibility/Accessible;Ljava/awt/Component;I)I", -1);
+    jint row = (*env)->CallStaticIntMethod(env, sjc_CAccessibleText, jm_getLineNumberForIndex,
+                       fAccessible, fComponent, index);
+    CHECK_EXCEPTION();
+    return row;
+}
+
+- (NSRange)accessibilityRangeForLineAttribute:(int)index
+{
+    JNIEnv *env = [ThreadUtilities getJNIEnv];
+    GET_CACCESSIBLETEXT_CLASS_RETURN(DEFAULT_RANGE);
+    DECLARE_STATIC_METHOD_RETURN(jm_getRangeForLine, sjc_CAccessibleText, "getRangeForLine",
+                 "(Ljavax/accessibility/Accessible;Ljava/awt/Component;I)[I", DEFAULT_RANGE);
+    jintArray axTextRange = (jintArray)(*env)->CallStaticObjectMethod(env, sjc_CAccessibleText,
+                jm_getRangeForLine, fAccessible, fComponent, index);
+    CHECK_EXCEPTION();
+    if (axTextRange == NULL) return DEFAULT_RANGE;
+
+    return javaIntArrayToNSRange(env,axTextRange);
+}
+
+- (NSRange)accessibilityRangeForPositionAttribute:(NSPoint)point
+{
+
+    point.y = [[[[self view] window] screen] frame].size.height - point.y; // flip into java screen coords (0 is at upper-left corner of screen)
+
+    JNIEnv *env = [ThreadUtilities getJNIEnv];
+    GET_CACCESSIBLETEXT_CLASS_RETURN(DEFAULT_RANGE);
+    DECLARE_STATIC_METHOD_RETURN(jm_getCharacterIndexAtPosition, sjc_CAccessibleText, "getCharacterIndexAtPosition",
+                           "(Ljavax/accessibility/Accessible;Ljava/awt/Component;II)I", DEFAULT_RANGE);
+    jint charIndex = (*env)->CallStaticIntMethod(env, sjc_CAccessibleText, jm_getCharacterIndexAtPosition,
+                            fAccessible, fComponent, point.x, point.y);
+    CHECK_EXCEPTION();
+    if (charIndex == -1) return DEFAULT_RANGE;
+
+    // AccessibleText.getIndexAtPoint returns -1 for an invalid point
+    return NSMakeRange(charIndex, 1); //range's length is 1 - one-character range
+}
+
+- (NSRange)accessibilityRangeForIndexAttribute:(int)index
+{
+    JNIEnv *env = [ThreadUtilities getJNIEnv];
+    GET_CACCESSIBLETEXT_CLASS_RETURN(DEFAULT_RANGE);
+    DECLARE_STATIC_METHOD_RETURN(jm_getRangeForIndex, sjc_CAccessibleText, "getRangeForIndex",
+                    "(Ljavax/accessibility/Accessible;Ljava/awt/Component;I)[I", DEFAULT_RANGE);
+    jintArray axTextRange = (jintArray)(*env)->CallStaticObjectMethod(env, sjc_CAccessibleText, jm_getRangeForIndex,
+                              fAccessible, fComponent, index);
+    CHECK_EXCEPTION();
+    if (axTextRange == NULL) return DEFAULT_RANGE;
+
+    return javaIntArrayToNSRange(env, axTextRange);
+}
+
 @end
