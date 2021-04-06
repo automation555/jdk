@@ -23,11 +23,14 @@
  */
 
 #include "precompiled.hpp"
+#include "classfile/javaClasses.hpp"
 #include "gc/shared/barrierSet.hpp"
 #include "gc/shared/c2/barrierSetC2.hpp"
 #include "gc/shared/c2/cardTableBarrierSetC2.hpp"
 #include "gc/shared/gc_globals.hpp"
 #include "opto/arraycopynode.hpp"
+#include "opto/castnode.hpp"
+#include "opto/convertnode.hpp"
 #include "opto/graphKit.hpp"
 #include "runtime/sharedRuntime.hpp"
 #include "utilities/macros.hpp"
@@ -499,7 +502,56 @@ bool ArrayCopyNode::finish_transform(PhaseGVN *phase, bool can_reshape,
   }
   return true;
 }
+// return true if the current ArrayCopy copy from byte[] to byte[] and the source is j.l.String::value.
+bool ArrayCopyNode::is_string_copy(PhaseGVN* phase) const {
+  if (_kind == ArrayCopy && _alloc_tightly_coupled && _arguments_validated) {
+      const TypeAryPtr* src_type = nullptr;
+      const TypeAryPtr* dst_type = nullptr;
+      const Node* n;
 
+      n = in(ArrayCopyNode::Src);
+      if (n->Opcode() == Op_ConP) {
+        src_type = n->as_Type()->type()->isa_aryptr();
+      } else if (n->isa_ConstraintCast()) {
+        // if n is CastPP or CheckCastPP, check the instance field of load node.
+        // j.l.String::value must be loaded using getfield.
+        //
+        // Expecting DU-chains:
+        // -UseCompressedOops: CastPP -> LoadP   -> AddP
+        // +UseCompressedOops: CastPP -> DecodeN -> LoadN -> AddP
+        //                                  ^p
+        Node* p = n->in(1);
+
+        if (p->is_DecodeN()) {
+          p = p->in(1);
+        }
+
+        if (p->is_Load()) { // LoadN or LoadP
+          p = p->in(2);     // adr
+          const TypePtr* tp = phase->type(p)->isa_ptr();
+
+          assert(tp != nullptr, "TypePtr* tp is NULL!");
+          const TypeOopPtr* tinst = tp->isa_instptr();
+          if (tinst != nullptr && tinst->klass() == CURRENT_ENV->String_klass() &&
+              tinst->offset() == java_lang_String::value_offset()) {
+            src_type = n->as_Type()->type()->isa_aryptr();
+          }
+        }
+      }
+
+      n = in(ArrayCopyNode::Dest);
+      if (n->is_ConstraintCast()) {
+        dst_type = n->as_ConstraintCast()->type()->isa_aryptr();
+      }
+
+      if (src_type != nullptr && src_type->elem() == TypeInt::BYTE &&
+          dst_type != nullptr && dst_type->elem() == TypeInt::BYTE) {
+        return true;
+      }
+  }
+
+  return false;
+}
 
 Node *ArrayCopyNode::Ideal(PhaseGVN *phase, bool can_reshape) {
   if (remove_dead_region(phase, can_reshape))  return this;

@@ -75,7 +75,6 @@
 #include "runtime/stubRoutines.hpp"
 #include "runtime/thread.hpp"
 #include "runtime/threadSMR.hpp"
-#include "runtime/threadWXSetters.inline.hpp"
 #include "runtime/vframe.hpp"
 #include "runtime/vframeArray.hpp"
 #include "runtime/vframe_hp.hpp"
@@ -215,19 +214,20 @@ static bool rematerialize_objects(JavaThread* thread, int exec_mode, CompiledMet
     }
   }
   if (objects != NULL) {
+    bool skip_internal = (compiled_method != NULL) && !compiled_method->is_compiled_by_jvmci();
     if (exec_mode == Deoptimization::Unpack_none) {
       assert(thread->thread_state() == _thread_in_vm, "assumption");
       Thread* THREAD = thread;
       // Clear pending OOM if reallocation fails and return true indicating allocation failure
       realloc_failures = Deoptimization::realloc_objects(thread, &deoptee, &map, objects, CHECK_AND_CLEAR_(true));
+      Deoptimization::reassign_fields(&deoptee, &map, objects, realloc_failures, skip_internal, CHECK_AND_CLEAR_(true));
       deoptimized_objects = true;
     } else {
       JRT_BLOCK
       realloc_failures = Deoptimization::realloc_objects(thread, &deoptee, &map, objects, THREAD);
+      Deoptimization::reassign_fields(&deoptee, &map, objects, realloc_failures, skip_internal, THREAD);
       JRT_END
     }
-    bool skip_internal = (compiled_method != NULL) && !compiled_method->is_compiled_by_jvmci();
-    Deoptimization::reassign_fields(&deoptee, &map, objects, realloc_failures, skip_internal);
 #ifndef PRODUCT
     if (TraceDeoptimization) {
       ttyLocker ttyl;
@@ -272,7 +272,7 @@ static void restore_eliminated_locks(JavaThread* thread, GrowableArray<compiledV
             }
             if (exec_mode == Deoptimization::Unpack_none) {
               ObjectMonitor* monitor = deoptee_thread->current_waiting_monitor();
-              if (monitor != NULL && monitor->object() == mi->owner()) {
+              if (monitor != NULL && (oop)monitor->object() == mi->owner()) {
                 tty->print_cr("     object <" INTPTR_FORMAT "> DEFERRED relocking after wait", p2i(mi->owner()));
                 continue;
               }
@@ -1029,6 +1029,38 @@ oop Deoptimization::get_cached_box(AutoBoxObjectValue* bv, frame* fr, RegisterMa
 #endif // INCLUDE_JVMCI || INCLUDE_AOT
 
 #if COMPILER2_OR_JVMCI
+static void toposort_dfs(ObjectValue* ov, GrowableArray<ScopeValue*>& sorted,
+                         const GrowableArray<ScopeValue*>& objects) {
+  if (ov->is_visited()) return;
+
+  ov->set_visited(true);
+  for (int i = 0; i < ov->field_size(); ++i) {
+      if (ov->field_at(i)->is_object()) {
+#ifdef ASSERT
+        int ref = objects.find(ov->field_at(i));
+        assert(ref != -1, "must in be objects");
+#endif
+        toposort_dfs(ov->field_at(i)->as_ObjectValue(), sorted, objects);
+      }
+  }
+  sorted.append(ov);
+}
+
+static void toposort(GrowableArray<ScopeValue*>& objects) {
+  GrowableArray<ScopeValue*> sorted;
+
+  for (int i = 0; i < objects.length(); ++i) {
+    toposort_dfs(objects.at(i)->as_ObjectValue(), sorted, objects);
+  }
+
+  objects.swap(&sorted);
+
+  // reset visited
+  for (int i = 0; i < objects.length(); ++i) {
+    objects.at(i)->as_ObjectValue()->set_visited(false);
+  }
+}
+
 bool Deoptimization::realloc_objects(JavaThread* thread, frame* fr, RegisterMap* reg_map, GrowableArray<ScopeValue*>* objects, TRAPS) {
   Handle pending_exception(THREAD, thread->pending_exception());
   const char* exception_file = thread->exception_file();
@@ -1036,6 +1068,10 @@ bool Deoptimization::realloc_objects(JavaThread* thread, frame* fr, RegisterMap*
   thread->clear_pending_exception();
 
   bool failures = false;
+
+  if (objects->length() > 1) {
+    toposort(*objects);
+  }
 
   for (int i = 0; i < objects->length(); i++) {
     assert(objects->at(i)->is_object(), "invalid debug information");
@@ -1061,6 +1097,19 @@ bool Deoptimization::realloc_objects(JavaThread* thread, frame* fr, RegisterMap*
 #ifdef COMPILER2
         if (EnableVectorSupport && VectorSupport::is_vector(ik)) {
           obj = VectorSupport::allocate_vector(ik, fr, reg_map, sv, THREAD);
+        } else if (OptimizeTempArray && ik == vmClasses::String_klass() && sv->field_size() == 3) {
+          TypeArrayKlass* ak = TypeArrayKlass::create_klass(T_BYTE, THREAD);
+          ScopeValue* x;
+          StackValue* value;
+          intptr_t val;
+          int length;
+
+          x = sv->field_at(2);
+          value = StackValue::create_stack_value(fr, reg_map, x);
+          assert(value->type() == T_INT, "Agreement.");
+          val = value->get_int();
+          length = (jint)*((jint*)&val);
+          obj = ak->allocate(length, THREAD);
         } else {
           obj = ik->allocate_instance(THREAD);
         }
@@ -1385,7 +1434,7 @@ static int reassign_fields_by_klass(InstanceKlass* klass, frame* fr, RegisterMap
 }
 
 // restore fields of all eliminated objects and arrays
-void Deoptimization::reassign_fields(frame* fr, RegisterMap* reg_map, GrowableArray<ScopeValue*>* objects, bool realloc_failures, bool skip_internal) {
+void Deoptimization::reassign_fields(frame* fr, RegisterMap* reg_map, GrowableArray<ScopeValue*>* objects, bool realloc_failures, bool skip_internal, TRAPS) {
   for (int i = 0; i < objects->length(); i++) {
     ObjectValue* sv = (ObjectValue*) objects->at(i);
     Klass* k = java_lang_Class::as_Klass(sv->klass()->as_ConstantOopReadValue()->value()());
@@ -1424,7 +1473,39 @@ void Deoptimization::reassign_fields(frame* fr, RegisterMap* reg_map, GrowableAr
 #endif
     if (k->is_instance_klass()) {
       InstanceKlass* ik = InstanceKlass::cast(k);
-      reassign_fields_by_klass(ik, fr, reg_map, sv, 0, obj(), skip_internal);
+
+      if (ik == vmClasses::String_klass() && sv->field_size() == 3) {
+        TypeArrayKlass* ak = TypeArrayKlass::create_klass(T_BYTE, THREAD);
+        // open the envelope and re-allocate the eliminated arrayoop
+        // [0] src
+        // [1] src_pos
+        // [2] length
+        // dst = Arrays.copyOfRange(src, src_pos, src_pos + length)
+        oop src;
+        int src_pos;
+        ScopeValue* x;
+        StackValue* value;
+        intptr_t val;
+
+        x = sv->field_at(0);
+        value = StackValue::create_stack_value(fr, reg_map, x);
+        assert(value->type() == T_OBJECT, "Agreement.");
+        src = value->get_obj()();
+
+        x = sv->field_at(1);
+        value  = StackValue::create_stack_value(fr, reg_map, x);
+        assert(value->type() == T_INT, "Agreement.");
+        val = value->get_int();
+        src_pos = (jint)*((jint*)&val);
+
+        assert(sv->value()()->is_array(), "must be an arrayOop");
+        arrayOop dst = (arrayOop)(sv->value()());
+        ak->copy_array((arrayOop)src, src_pos, dst, 0, dst->length(), THREAD);
+
+        objects->delete_at(i--);
+      } else {
+        reassign_fields_by_klass(ik, fr, reg_map, sv, 0, obj(), skip_internal);
+      }
     } else if (k->is_typeArray_klass()) {
       TypeArrayKlass* ak = TypeArrayKlass::cast(k);
       reassign_type_array_elements(fr, reg_map, sv, (typeArrayOop) obj(), ak->element_type());
@@ -1468,7 +1549,7 @@ bool Deoptimization::relock_objects(JavaThread* thread, GrowableArray<MonitorInf
           if (mark.has_monitor()) {
             // defer relocking if the deoptee thread is currently waiting for obj
             ObjectMonitor* waiting_monitor = deoptee_thread->current_waiting_monitor();
-            if (waiting_monitor != NULL && waiting_monitor->object() == obj()) {
+            if (waiting_monitor != NULL && (oop)waiting_monitor->object() == obj()) {
               assert(fr.is_deoptimized_frame(), "frame must be scheduled for deoptimization");
               mon_info->lock()->set_displaced_header(markWord::unused_mark());
               JvmtiDeferredUpdates::inc_relock_count_after_wait(deoptee_thread);
@@ -2470,9 +2551,6 @@ Deoptimization::update_method_data_from_interpreter(MethodData* trap_mdo, int tr
 }
 
 Deoptimization::UnrollBlock* Deoptimization::uncommon_trap(JavaThread* thread, jint trap_request, jint exec_mode) {
-  // Enable WXWrite: current function is called from methods compiled by C2 directly
-  MACOS_AARCH64_ONLY(ThreadWXEnable wx(WXWrite, thread));
-
   if (TraceDeoptimization) {
     tty->print("Uncommon trap ");
   }

@@ -255,6 +255,7 @@ void Compile::print_statistics() {
     PhaseOutput::print_statistics();
     PhasePeephole::print_statistics();
     PhaseIdealLoop::print_statistics();
+    PhaseMacroExpand::print_statistics();
     if (xtty != NULL)  xtty->tail("statistics");
   }
   if (_intrinsic_hist_flags[as_int(vmIntrinsics::_none)] != 0) {
@@ -2440,7 +2441,7 @@ static bool is_vector_bitwise_op(Node* n) {
 }
 
 static bool is_vector_bitwise_cone_root(Node* n) {
-  if (n->bottom_type()->isa_vectmask() || !is_vector_bitwise_op(n)) {
+  if (!is_vector_bitwise_op(n)) {
     return false;
   }
   for (DUIterator_Fast imax, i = n->fast_outs(imax); i < imax; i++) {
@@ -2754,6 +2755,7 @@ void Compile::Code_Gen() {
     if (failing()) {
       return;
     }
+    print_method(PHASE_AFTER_MATCHING, 3);
   }
   // In debug mode can dump m._nodes.dump() for mapping of ideal to machine
   // nodes.  Mapping is only valid at the root of each matched subtree.
@@ -3513,7 +3515,7 @@ void Compile::final_graph_reshaping_main_switch(Node* n, Final_Reshape_Counts& f
     }
     break;
   case Op_Loop:
-    assert(!n->as_Loop()->is_transformed_long_inner_loop() || _loop_opts_cnt == 0, "should have been turned into a counted loop");
+    assert(!n->as_Loop()->is_transformed_long_loop() || _loop_opts_cnt == 0, "should have been turned into a counted loop");
   case Op_CountedLoop:
   case Op_LongCountedLoop:
   case Op_OuterStripMinedLoop:
@@ -4685,7 +4687,7 @@ void Compile::sort_macro_nodes() {
   }
 }
 
-void Compile::print_method(CompilerPhaseType cpt, const char *name, int level) {
+void Compile::print_method(CompilerPhaseType cpt, const char *name, int level, int idx) {
   EventCompilerPhase event;
   if (event.should_commit()) {
     CompilerEvent::PhaseEvent::post(event, C->_latest_stage_start_counter, cpt, C->_compile_id, level);
@@ -4707,7 +4709,7 @@ void Compile::print_method(CompilerPhaseType cpt, int level, int idx) {
     jio_snprintf(output, sizeof(output), "%s", CompilerPhaseTypeHelper::to_string(cpt));
   }
 #endif
-  print_method(cpt, output, level);
+  print_method(cpt, output, level, idx);
 }
 
 void Compile::print_method(CompilerPhaseType cpt, Node* n, int level) {
@@ -4773,7 +4775,7 @@ void igv_print(bool network, const char* phase_name) {
 
 // Called from debugger. Normal write to the default _printer. Only works if Ideal Graph Visualizer printing flags are set.
 void igv_print_default() {
-  Compile::current()->print_method(PHASE_DEBUG, 0);
+  Compile::current()->print_method(PHASE_DEBUG, 0, 0);
 }
 
 // Called from debugger, especially when replaying a trace in which the program state cannot be altered like with rr replay.
@@ -4796,7 +4798,7 @@ void Compile::igv_print_method_to_file(const char* phase_name, bool append) {
     _debug_file_printer->update_compiled_method(C->method());
   }
   tty->print_cr("Method %s to %s", append ? "appended" : "printed", file_name);
-  _debug_file_printer->print(phase_name, (Node*)C->root());
+  _debug_file_printer->print_method(phase_name, 0);
 }
 
 void Compile::igv_print_method_to_network(const char* phase_name) {
@@ -4806,7 +4808,7 @@ void Compile::igv_print_method_to_network(const char* phase_name) {
     _debug_network_printer->update_compiled_method(C->method());
   }
   tty->print_cr("Method printed over network stream to IGV");
-  _debug_network_printer->print(phase_name, (Node*)C->root());
+  _debug_network_printer->print_method(phase_name, 0);
 }
 #endif
 

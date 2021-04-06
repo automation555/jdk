@@ -126,11 +126,10 @@ Handle JavaArgumentUnboxer::next_arg(BasicType expectedType) {
 }
 
 // Bring the JVMCI compiler thread into the VM state.
-#define JVMCI_VM_ENTRY_MARK                                       \
-  MACOS_AARCH64_ONLY(ThreadWXEnable __wx(WXWrite, thread));       \
-  ThreadInVMfromNative __tiv(thread);                             \
-  HandleMarkCleaner __hm(thread);                                 \
-  Thread* THREAD = thread;                                        \
+#define JVMCI_VM_ENTRY_MARK                   \
+  ThreadInVMfromNative __tiv(thread);         \
+  HandleMarkCleaner __hm(thread);             \
+  Thread* THREAD = thread;                    \
   debug_only(VMNativeEntryWrapper __vew;)
 
 // Native method block that transitions current thread to '_thread_in_vm'.
@@ -458,7 +457,7 @@ C2V_VMENTRY_NULL(jobject, getResolvedJavaType0, (JNIEnv* env, jobject, jobject b
 
 C2V_VMENTRY_NULL(jobject, findUniqueConcreteMethod, (JNIEnv* env, jobject, jobject jvmci_type, jobject jvmci_method))
   methodHandle method (THREAD, JVMCIENV->asMethod(jvmci_method));
-  InstanceKlass* holder = InstanceKlass::cast(JVMCIENV->asKlass(jvmci_type));
+  Klass* holder = JVMCIENV->asKlass(jvmci_type);
   if (holder->is_interface()) {
     JVMCI_THROW_MSG_NULL(InternalError, err_msg("Interface %s should be handled in Java code", holder->external_name()));
   }
@@ -1265,7 +1264,7 @@ C2V_VMENTRY_NULL(jobject, iterateFrames, (JNIEnv* env, jobject compilerToVM, job
                 }
               }
               bool realloc_failures = Deoptimization::realloc_objects(thread, fst.current(), fst.register_map(), objects, CHECK_NULL);
-              Deoptimization::reassign_fields(fst.current(), fst.register_map(), objects, realloc_failures, false);
+              Deoptimization::reassign_fields(fst.current(), fst.register_map(), objects, realloc_failures, false, CHECK_NULL);
               realloc_called = true;
 
               GrowableArray<ScopeValue*>* local_values = scope->locals();
@@ -1525,7 +1524,7 @@ C2V_VMENTRY(void, materializeVirtualObjects, (JNIEnv* env, jobject, jobject _hs_
   }
 
   bool realloc_failures = Deoptimization::realloc_objects(thread, fstAfterDeopt.current(), fstAfterDeopt.register_map(), objects, CHECK);
-  Deoptimization::reassign_fields(fstAfterDeopt.current(), fstAfterDeopt.register_map(), objects, realloc_failures, false);
+  Deoptimization::reassign_fields(fstAfterDeopt.current(), fstAfterDeopt.register_map(), objects, realloc_failures, false, CHECK);
 
   for (int frame_index = 0; frame_index < virtualFrames->length(); frame_index++) {
     compiledVFrame* cvf = virtualFrames->at(frame_index);

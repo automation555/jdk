@@ -643,7 +643,7 @@ class Compile : public Phase {
 #endif
   }
 
-  void print_method(CompilerPhaseType cpt, const char *name, int level = 1);
+  void print_method(CompilerPhaseType cpt, const char *name, int level = 1, int idx = 0);
   void print_method(CompilerPhaseType cpt, int level = 1, int idx = 0);
   void print_method(CompilerPhaseType cpt, Node* n, int level = 3);
 
@@ -662,6 +662,7 @@ class Compile : public Phase {
   int           expensive_count()         const { return _expensive_nodes.length(); }
 
   Node*         macro_node(int idx)       const { return _macro_nodes.at(idx); }
+  void          macro_node_swap(int a, int b)   { ::swap(_macro_nodes.at(a), _macro_nodes.at(b)); }
   Node*         predicate_opaque1_node(int idx) const { return _predicate_opaqs.at(idx); }
   Node*         skeleton_predicate_opaque4_node(int idx) const { return _skeleton_predicate_opaqs.at(idx); }
   Node*         expensive_node(int idx)   const { return _expensive_nodes.at(idx); }
