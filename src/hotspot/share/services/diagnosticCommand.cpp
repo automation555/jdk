@@ -407,7 +407,7 @@ void PrintSystemPropertiesDCmd::execute(DCmdSource source, TRAPS) {
   }
 
   // The result should be a [B
-  oop res = result.get_oop();
+  oop res = (oop)result.get_jobject();
   assert(res->is_typeArray(), "just checking");
   assert(TypeArrayKlass::cast(res->klass())->element_type() == T_BYTE, "just checking");
 
@@ -479,7 +479,7 @@ void FinalizerInfoDCmd::execute(DCmdSource source, TRAPS) {
                          vmSymbols::get_finalizer_histogram_name(),
                          vmSymbols::void_finalizer_histogram_entry_array_signature(), CHECK);
 
-  objArrayOop result_oop = (objArrayOop) result.get_oop();
+  objArrayOop result_oop = (objArrayOop) result.get_jobject();
   if (result_oop->length() == 0) {
     output()->print_cr("No instances waiting for finalization found");
     return;
@@ -513,16 +513,28 @@ void FinalizerInfoDCmd::execute(DCmdSource source, TRAPS) {
 
 #if INCLUDE_SERVICES // Heap dumping/inspection supported
 HeapDumpDCmd::HeapDumpDCmd(outputStream* output, bool heap) :
-                           DCmdWithParser(output, heap),
-  _filename("filename","Name of the dump file", "STRING",true),
+  DCmdWithParser(output, heap),
+  _filename("filename", "Name of the dump file", "STRING", true),
   _all("-all", "Dump all objects, including unreachable objects",
-       "BOOLEAN", false, "false"),
+    "BOOLEAN", false, "false"),
   _gzip("-gz", "If specified, the heap dump is written in gzipped format "
-               "using the given compression level. 1 (recommended) is the fastest, "
-               "9 the strongest compression.", "INT", false, "1") {
+    "using the given compression level. 1 (recommended) is the fastest, "
+    "9 the strongest compression.", "INT", false, "1"),
+  _overwrite("-overwrite", "Overwrite the file if it already exists",
+    "BOOLEAN", false, "false"),
+#ifdef _WINDOWS
+  _stream("-stream", "Allows to stream the dump to a named pipe.",
+          "BOOLEAN", false, "false")
+#else
+  _stream("-stream", "Allows to stream the dump to domain socket, tty "
+          "or something similar", "BOOLEAN", false, "false")
+#endif
+{
   _dcmdparser.add_dcmd_option(&_all);
   _dcmdparser.add_dcmd_argument(&_filename);
   _dcmdparser.add_dcmd_option(&_gzip);
+  _dcmdparser.add_dcmd_option(&_overwrite);
+  _dcmdparser.add_dcmd_option(&_stream);
 }
 
 void HeapDumpDCmd::execute(DCmdSource source, TRAPS) {
@@ -537,11 +549,16 @@ void HeapDumpDCmd::execute(DCmdSource source, TRAPS) {
     }
   }
 
+  if (_overwrite.value() && _stream.value()) {
+    output()->print_cr("Cannot specify -overwrite and -stream simultaneously.");
+    return;
+  }
+
   // Request a full GC before heap dump if _all is false
   // This helps reduces the amount of unreachable objects in the dump
   // and makes it easier to browse.
   HeapDumper dumper(!_all.value() /* request GC if _all is false*/);
-  dumper.dump(_filename.value(), output(), (int) level);
+  dumper.dump(_filename.value(), output(), (int) level, _overwrite.value(), _stream.value());
 }
 
 int HeapDumpDCmd::num_arguments() {
@@ -870,7 +887,7 @@ void JMXStatusDCmd::execute(DCmdSource source, TRAPS) {
   JavaCalls::call_static(&result, k, vmSymbols::getAgentStatus_name(), vmSymbols::void_string_signature(), CHECK);
 
   jvalue* jv = (jvalue*) result.get_value_addr();
-  oop str = cast_to_oop(jv->l);
+  oop str = (oop) jv->l;
   if (str != NULL) {
       char* out = java_lang_String::as_utf8_string(str);
       if (out) {
