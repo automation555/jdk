@@ -860,10 +860,10 @@ static jclass jvm_define_class_common(const char *name,
   ClassFileStream st((u1*)buf, len, source, ClassFileStream::verify);
   Handle class_loader (THREAD, JNIHandles::resolve(loader));
   Handle protection_domain (THREAD, JNIHandles::resolve(pd));
-  ClassLoadInfo cl_info(protection_domain);
-  Klass* k = SystemDictionary::resolve_from_stream(&st, class_name,
+  Klass* k = SystemDictionary::resolve_from_stream(class_name,
                                                    class_loader,
-                                                   cl_info,
+                                                   protection_domain,
+                                                   &st,
                                                    CHECK_NULL);
 
   if (log_is_enabled(Debug, class, resolve)) {
@@ -947,10 +947,10 @@ static jclass jvm_lookup_define_class(jclass lookup, const char *name,
 
   InstanceKlass* ik = NULL;
   if (!is_hidden) {
-    ClassLoadInfo cl_info(protection_domain);
-    ik = SystemDictionary::resolve_from_stream(&st, class_name,
+    ik = SystemDictionary::resolve_from_stream(class_name,
                                                class_loader,
-                                               cl_info,
+                                               protection_domain,
+                                               &st,
                                                CHECK_NULL);
 
     if (log_is_enabled(Debug, class, resolve)) {
@@ -966,10 +966,11 @@ static jclass jvm_lookup_define_class(jclass lookup, const char *name,
                           is_hidden,
                           is_strong,
                           vm_annotations);
-    ik = SystemDictionary::resolve_from_stream(&st, class_name,
-                                               class_loader,
-                                               cl_info,
-                                               CHECK_NULL);
+    ik = SystemDictionary::parse_stream(class_name,
+                                        class_loader,
+                                        &st,
+                                        cl_info,
+                                        CHECK_NULL);
 
     // The hidden class loader data has been artificially been kept alive to
     // this point. The mirror and any instances of this class have to keep
@@ -2980,32 +2981,9 @@ JVM_ENTRY(void, JVM_SuspendThread(JNIEnv* env, jobject jthread))
   JavaThread* receiver = NULL;
   bool is_alive = tlh.cv_internal_thread_to_JavaThread(jthread, &receiver, NULL);
   if (is_alive) {
-    // jthread refers to a live JavaThread.
-    {
-      MutexLocker ml(receiver->SR_lock(), Mutex::_no_safepoint_check_flag);
-      if (receiver->is_external_suspend()) {
-        // Don't allow nested external suspend requests. We can't return
-        // an error from this interface so just ignore the problem.
-        return;
-      }
-      if (receiver->is_exiting()) { // thread is in the process of exiting
-        return;
-      }
-      receiver->set_external_suspend();
-    }
-
-    // java_suspend() will catch threads in the process of exiting
-    // and will ignore them.
+    // jthread refers to a live JavaThread, but java_suspend() will
+    // detect a thread that has started to exit and will ignore it.
     receiver->java_suspend();
-
-    // It would be nice to have the following assertion in all the
-    // time, but it is possible for a racing resume request to have
-    // resumed this thread right after we suspended it. Temporarily
-    // enable this assertion if you are chasing a different kind of
-    // bug.
-    //
-    // assert(java_lang_Thread::thread(receiver->threadObj()) == NULL ||
-    //   receiver->is_being_ext_suspended(), "thread is not suspended");
   }
 JVM_END
 
@@ -3016,22 +2994,6 @@ JVM_ENTRY(void, JVM_ResumeThread(JNIEnv* env, jobject jthread))
   bool is_alive = tlh.cv_internal_thread_to_JavaThread(jthread, &receiver, NULL);
   if (is_alive) {
     // jthread refers to a live JavaThread.
-
-    // This is the original comment for this Threads_lock grab:
-    //   We need to *always* get the threads lock here, since this operation cannot be allowed during
-    //   a safepoint. The safepoint code relies on suspending a thread to examine its state. If other
-    //   threads randomly resumes threads, then a thread might not be suspended when the safepoint code
-    //   looks at it.
-    //
-    // The above comment dates back to when we had both internal and
-    // external suspend APIs that shared a common underlying mechanism.
-    // External suspend is now entirely cooperative and doesn't share
-    // anything with internal suspend. That said, there are some
-    // assumptions in the VM that an external resume grabs the
-    // Threads_lock. We can't drop the Threads_lock grab here until we
-    // resolve the assumptions that exist elsewhere.
-    //
-    MutexLocker ml(Threads_lock);
     receiver->java_resume();
   }
 JVM_END
