@@ -77,11 +77,6 @@ enum ThreadPriority {        // JLS 20.20.1-3
   CriticalPriority = 11      // Critical thread priority
 };
 
-enum WXMode {
-  WXWrite,
-  WXExec
-};
-
 // Executable parameter flag for os::commit_memory() and
 // os::commit_memory_or_exit().
 const bool ExecMem = true;
@@ -187,8 +182,6 @@ class os: AllStatic {
 
   // unset environment variable
   static bool unsetenv(const char* name);
-  // Get environ pointer, platform independently
-  static char** get_environ();
 
   static bool have_special_privileges();
 
@@ -508,12 +501,8 @@ class os: AllStatic {
 
   static bool message_box(const char* title, const char* message);
 
-  // run cmd in a separate process and return its exit code; or -1 on failures.
-  // Note: only safe to use in fatal error situations.
-  // The "prefer_vfork" argument is only used on POSIX platforms to
-  // indicate whether vfork should be used instead of fork to spawn the
-  // child process (ignored on AIX, which always uses vfork).
-  static int fork_and_exec(const char *cmd, bool prefer_vfork = false);
+  // run cmd in a separate process and return its exit code; or -1 on failures
+  static int fork_and_exec(char *cmd, bool use_vfork_if_available = false);
 
   // Call ::exit() on all platforms but Windows
   static void exit(int num);
@@ -753,7 +742,7 @@ class os: AllStatic {
   static bool dir_is_empty(const char* path);
 
   // IO operations on binary files
-  static int create_binary_file(const char* path, bool rewrite_existing);
+  static int create_binary_file(const char* path, bool rewrite_existing, bool streaming);
   static jlong current_file_offset(int fd);
   static jlong seek_to_file_offset(int fd, jlong offset);
 
@@ -936,11 +925,6 @@ class os: AllStatic {
     Thread* _thread;
     bool _done;
   };
-
-#if defined(__APPLE__) && defined(AARCH64)
-  // Enables write or execute access to writeable and executable pages.
-  static void current_thread_enable_wx(WXMode mode);
-#endif // __APPLE__ && AARCH64
 
 #ifndef _WINDOWS
   // Suspend/resume support
