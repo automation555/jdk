@@ -135,7 +135,7 @@ public final class Recording implements Closeable {
      *         FlightRecorderPermission "accessFlightRecorder" is not set.
      */
     public Recording() {
-        this(Map.of());
+        this(new HashMap<String, String>());
      }
 
     /**
@@ -436,7 +436,7 @@ public final class Recording implements Closeable {
          * @since 14
          */
         /*package private*/ void setFlushInterval(Duration interval) {
-            Objects.nonNull(interval);
+            Objects.requireNonNull(interval);
             if (interval.isNegative()) {
                 throw new IllegalArgumentException("Stream interval can't be negative");
             }

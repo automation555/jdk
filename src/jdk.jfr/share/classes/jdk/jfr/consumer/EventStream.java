@@ -159,7 +159,7 @@ public interface EventStream extends AutoCloseable {
      *         files in the directory.
      */
     public static EventStream openRepository(Path directory) throws IOException {
-        Objects.nonNull(directory);
+        Objects.requireNonNull(directory);
         AccessControlContext acc = AccessController.getContext();
         return new EventDirectoryStream(acc, directory, FileAccess.UNPRIVILEGED, null, Collections.emptyList());
     }
@@ -263,7 +263,6 @@ public interface EventStream extends AutoCloseable {
      * <p>
      * Closing a previously closed stream has no effect.
      */
-    @Override
     void close();
 
     /**
