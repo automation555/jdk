@@ -31,6 +31,7 @@
 #include "gc/parallel/psOldGen.hpp"
 #include "gc/shared/cardTableBarrierSet.hpp"
 #include "gc/shared/gcLocker.hpp"
+#include "gc/shared/pretouchTask.hpp"
 #include "gc/shared/spaceDecorator.inline.hpp"
 #include "logging/log.hpp"
 #include "oops/oop.inline.hpp"
@@ -167,14 +168,14 @@ void PSOldGen::object_iterate_block(ObjectClosure* cl, size_t block_index) {
   // Get object starting at or reaching into this block.
   HeapWord* start = start_array()->object_start(begin);
   if (start < begin) {
-    start += cast_to_oop(start)->size();
+    start += oop(start)->size();
   }
   assert(start >= begin,
          "Object address" PTR_FORMAT " must be larger or equal to block address at " PTR_FORMAT,
          p2i(start), p2i(begin));
   // Iterate all objects until the end.
-  for (HeapWord* p = start; p < end; p += cast_to_oop(p)->size()) {
-    cl->do_object(cast_to_oop(p));
+  for (HeapWord* p = start; p < end; p += oop(p)->size()) {
+    cl->do_object(oop(p));
   }
 }
 
@@ -182,17 +183,44 @@ bool PSOldGen::expand_for_allocate(size_t word_size) {
   assert(word_size > 0, "allocating zero words?");
   bool result = true;
   {
-    MutexLocker x(ExpandHeap_lock);
-    // Avoid "expand storms" by rechecking available space after obtaining
-    // the lock, because another thread may have already made sufficient
-    // space available.  If insufficient space available, that will remain
-    // true until we expand, since we have the lock.  Other threads may take
-    // the space we need before we can allocate it, regardless of whether we
-    // expand.  That's okay, we'll just try expanding again.
-    if (object_space()->needs_expand(word_size)) {
-      result = expand(word_size*HeapWordSize);
+    bool is_locked = false;
+    PretouchTaskCoordinator *task_coordinator = PretouchTaskCoordinator::get_task_coordinator();
+    while(true) {
+      if (UseMultithreadedPretouchForOldGen) {
+        is_locked = ExpandHeap_lock->try_lock();
+      } else {
+        ExpandHeap_lock->lock();
+        is_locked = true;
+      }
+      // Avoid "expand storms" by rechecking available space after obtaining
+      // the lock, because another thread may have already made sufficient
+      // space available.  If insufficient space available, that will remain
+      // true until we expand, since we have the lock.  Other threads may take
+      // the space we need before we can allocate it, regardless of whether we
+      // expand.  That's okay, we'll just try expanding again.
+      //
+      // Todo:
+      // Thread which holds the lock can expand once for all the threads and
+      // this will be win-win for all the threads.
+      if (is_locked) {
+        if (object_space()->needs_expand(word_size)) {
+          // Marking not ready makes other threads to spin in loop.
+          task_coordinator->release_set_task_notready();
+          result = expand(word_size*HeapWordSize);
+          task_coordinator->release_set_task_done();
+        }
+
+        assert (task_coordinator->is_task_done_acquire(), "Task should be done at this point");
+        ExpandHeap_lock->unlock();
+        break;
+
+      } else {
+        // Lets help expanding thread to pretouch the memory.
+        task_coordinator->worker_wait_for_task();
+      }
     }
   }
+
   if (GCExpandToAllocateDelayMillis > 0) {
     os::naked_sleep(GCExpandToAllocateDelayMillis);
   }
