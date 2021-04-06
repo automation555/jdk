@@ -71,6 +71,15 @@ public class Messages {
         return resources;
     }
 
+    /**
+     * Returns the reporter being used when generating messages.
+     *
+     * @return the reporter
+     */
+    public Reporter getReporter() {
+        return reporter;
+    }
+
     // ***** Errors *****
 
     /**
@@ -139,6 +148,7 @@ public class Messages {
 
     /**
      * Reports an informational notice to the doclet's reporter.
+     * The message is suppressed if the {@code -quiet} option is set.
      *
      * @param key the name of a resource containing the message to be printed
      * @param args optional arguments to be replaced in the message.

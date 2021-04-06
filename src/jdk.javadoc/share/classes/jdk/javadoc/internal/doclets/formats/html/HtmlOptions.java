@@ -179,6 +179,7 @@ public class HtmlOptions extends BaseOptions {
      * Argument for command-line option {@code -windowtitle}.
      */
     private String windowTitle = "";
+
     //</editor-fold>
 
     private HtmlConfiguration config;
