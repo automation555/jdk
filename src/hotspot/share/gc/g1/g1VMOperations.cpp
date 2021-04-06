@@ -120,7 +120,7 @@ VM_G1CollectForAllocation::VM_G1CollectForAllocation(size_t         word_size,
 void VM_G1CollectForAllocation::doit() {
   G1CollectedHeap* g1h = G1CollectedHeap::heap();
 
-  if (_word_size > 0) {
+  if (_word_size > 0 && _gc_cause != GCCause::_g1_proactive_collection) {
     // An allocation has been requested. So, try to do that first.
     _result = g1h->attempt_allocation_at_safepoint(_word_size,
                                                    false /* expect_null_cur_alloc_region */);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -33,7 +33,6 @@
 #include "gc/g1/heapRegion.inline.hpp"
 #include "gc/g1/heapRegionSet.inline.hpp"
 #include "gc/g1/heapRegionType.hpp"
-#include "gc/shared/tlab_globals.hpp"
 #include "utilities/align.hpp"
 
 G1Allocator::G1Allocator(G1CollectedHeap* heap) :
@@ -250,7 +249,8 @@ HeapWord* G1Allocator::survivor_attempt_allocation(size_t min_word_size,
     MutexLocker x(FreeList_lock, Mutex::_no_safepoint_check_flag);
     result = survivor_gc_alloc_region(node_index)->attempt_allocation_locked(min_word_size,
                                                                              desired_word_size,
-                                                                             actual_word_size);
+                                                                             actual_word_size,
+                                                                             true);
     if (result == NULL) {
       set_survivor_full();
     }
@@ -274,7 +274,8 @@ HeapWord* G1Allocator::old_attempt_allocation(size_t min_word_size,
     MutexLocker x(FreeList_lock, Mutex::_no_safepoint_check_flag);
     result = old_gc_alloc_region()->attempt_allocation_locked(min_word_size,
                                                               desired_word_size,
-                                                              actual_word_size);
+                                                              actual_word_size,
+                                                              true);
     if (result == NULL) {
       set_old_full();
     }

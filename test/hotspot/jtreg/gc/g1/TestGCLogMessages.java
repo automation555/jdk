@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -33,7 +33,7 @@ package gc.g1;
  * @modules java.base/jdk.internal.misc
  *          java.management
  * @build sun.hotspot.WhiteBox
- * @run driver jdk.test.lib.helpers.ClassFileInstaller sun.hotspot.WhiteBox
+ * @run driver ClassFileInstaller sun.hotspot.WhiteBox
  * @run main/othervm -Xbootclasspath/a:. -XX:+UnlockDiagnosticVMOptions -XX:+WhiteBoxAPI
  *                   gc.g1.TestGCLogMessages
  */
@@ -260,7 +260,6 @@ public class TestGCLogMessages {
         pb = ProcessTools.createJavaProcessBuilder("-XX:+UseG1GC",
                                                    "-Xmx32M",
                                                    "-Xmn16M",
-                                                   "-Xms32M",
                                                    "-Xlog:gc+phases=trace",
                                                    GCTestWithEvacuationFailure.class.getName());
 
@@ -314,16 +313,17 @@ public class TestGCLogMessages {
     static class GCTestWithEvacuationFailure {
         private static byte[] garbage;
         private static byte[] largeObject;
-        private static Object[] holder = new Object[200]; // Must be larger than G1EvacuationFailureALotCount
+        private static Object[] holder = new Object[800]; // Must be larger than G1EvacuationFailureALotCount
 
         public static void main(String [] args) {
             largeObject = new byte[16*1024*1024];
             System.out.println("Creating garbage");
-            // Create 16 MB of garbage. This should result in at least one GC,
+            // Create 64 MB of garbage. This should result in at least one GC,
             // (Heap size is 32M, we use 17MB for the large object above)
-            // which is larger than G1EvacuationFailureALotInterval.
+            // which is larger than G1EvacuationFailureALotInterval and enough
+            // will survive to cause the evacuation failure.
             for (int i = 0; i < 16 * 1024; i++) {
-                holder[i % holder.length] = new byte[1024];
+                holder[i % holder.length] = new byte[4096];
             }
             System.out.println("Done");
         }
