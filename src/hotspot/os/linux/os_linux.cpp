@@ -167,11 +167,6 @@ const char * os::Linux::_libc_version = NULL;
 const char * os::Linux::_libpthread_version = NULL;
 size_t os::Linux::_default_large_page_size = 0;
 
-#ifdef __GLIBC__
-os::Linux::mallinfo_func_t os::Linux::_mallinfo = NULL;
-os::Linux::mallinfo2_func_t os::Linux::_mallinfo2 = NULL;
-#endif // __GLIBC__
-
 static jlong initial_time_count=0;
 
 static int clock_tics_per_sec = 100;
@@ -663,14 +658,20 @@ static void *thread_native_entry(Thread *thread) {
 
   thread->record_stack_base_and_size();
 
+#ifndef __GLIBC__
   // Try to randomize the cache line index of hot stack frames.
   // This helps when threads of the same stack traces evict each other's
   // cache lines. The threads can be either from the same JVM instance, or
   // from different JVM instances. The benefit is especially true for
   // processors with hyperthreading technology.
+  // This code is not needed anymore in glibc because it has MULTI_PAGE_ALIASING
+  // and we did not see any degradation in performance without `alloca()`.
   static int counter = 0;
   int pid = os::current_process_id();
-  alloca(((pid ^ counter++) & 7) * 128);
+  void *stackmem = alloca(((pid ^ counter++) & 7) * 128);
+  // Ensure the alloca result is used in a way that prevents the compiler from eliding it.
+  *(char *)stackmem = 1;
+#endif
 
   thread->initialize_thread_current();
 
@@ -2179,25 +2180,19 @@ void os::Linux::print_process_memory_info(outputStream* st) {
   // Print glibc outstanding allocations.
   // (note: there is no implementation of mallinfo for muslc)
 #ifdef __GLIBC__
-  size_t total_allocated = 0;
-  bool might_have_wrapped = false;
-  if (_mallinfo2 != NULL) {
-    struct glibc_mallinfo2 mi = _mallinfo2();
-    total_allocated = mi.uordblks;
-  } else if (_mallinfo != NULL) {
-    // mallinfo is an old API. Member names mean next to nothing and, beyond that, are int.
-    // So values may have wrapped around. Still useful enough to see how much glibc thinks
-    // we allocated.
-    struct glibc_mallinfo mi = _mallinfo();
-    total_allocated = (size_t)(unsigned)mi.uordblks;
-    // Since mallinfo members are int, glibc values may have wrapped. Warn about this.
-    might_have_wrapped = (vmrss * K) > UINT_MAX && (vmrss * K) > (total_allocated + UINT_MAX);
+  struct mallinfo mi = ::mallinfo();
+
+  // mallinfo is an old API. Member names mean next to nothing and, beyond that, are int.
+  // So values may have wrapped around. Still useful enough to see how much glibc thinks
+  // we allocated.
+  const size_t total_allocated = (size_t)(unsigned)mi.uordblks;
+  st->print("C-Heap outstanding allocations: " SIZE_FORMAT "K", total_allocated / K);
+  // Since mallinfo members are int, glibc values may have wrapped. Warn about this.
+  if ((vmrss * K) > UINT_MAX && (vmrss * K) > (total_allocated + UINT_MAX)) {
+    st->print(" (may have wrapped)");
   }
-  if (_mallinfo2 != NULL || _mallinfo != NULL) {
-    st->print_cr("C-Heap outstanding allocations: " SIZE_FORMAT "K%s",
-                 total_allocated / K,
-                 might_have_wrapped ? " (may have wrapped)" : "");
-  }
+  st->cr();
+
 #endif // __GLIBC__
 
 }
@@ -3493,21 +3488,39 @@ int os::Linux::hugetlbfs_page_size_flag(size_t page_size) {
 }
 
 bool os::Linux::hugetlbfs_sanity_check(bool warn, size_t page_size) {
+  bool result = false;
+
   // Include the page size flag to ensure we sanity check the correct page size.
   int flags = MAP_ANONYMOUS | MAP_PRIVATE | MAP_HUGETLB | hugetlbfs_page_size_flag(page_size);
   void *p = mmap(NULL, page_size, PROT_READ|PROT_WRITE, flags, -1, 0);
 
   if (p != MAP_FAILED) {
-    // Mapping succeeded, sanity check passed.
+    // We don't know if this really is a huge page or not.
+    FILE *fp = fopen("/proc/self/maps", "r");
+    if (fp) {
+      while (!feof(fp)) {
+        char chars[257];
+        long x = 0;
+        if (fgets(chars, sizeof(chars), fp)) {
+          if (sscanf(chars, "%lx-%*x", &x) == 1
+              && x == (long)p) {
+            if (strstr (chars, "hugepage")) {
+              result = true;
+              break;
+            }
+          }
+        }
+      }
+      fclose(fp);
+    }
     munmap(p, page_size);
-    return true;
   }
 
-  if (warn) {
-    warning("HugeTLBFS is not configured or not supported by the operating system.");
+  if (warn && !result) {
+    warning("HugeTLBFS is not supported by the operating system.");
   }
 
-  return false;
+  return result;
 }
 
 bool os::Linux::shm_hugetlbfs_sanity_check(bool warn, size_t page_size) {
@@ -4343,11 +4356,6 @@ void os::init(void) {
   _page_sizes.add(Linux::page_size());
 
   Linux::initialize_system_info();
-
-#ifdef __GLIBC__
-  Linux::_mallinfo = CAST_TO_FN_PTR(Linux::mallinfo_func_t, dlsym(RTLD_DEFAULT, "mallinfo"));
-  Linux::_mallinfo2 = CAST_TO_FN_PTR(Linux::mallinfo2_func_t, dlsym(RTLD_DEFAULT, "mallinfo2"));
-#endif // __GLIBC__
 
   os::Linux::CPUPerfTicks pticks;
   bool res = os::Linux::get_tick_information(&pticks, -1);
