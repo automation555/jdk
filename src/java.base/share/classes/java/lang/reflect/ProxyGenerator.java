@@ -40,7 +40,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
@@ -98,9 +97,9 @@ final class ProxyGenerator extends ClassWriter {
                             "jdk.proxy.ProxyGenerator.saveGeneratedFiles"));
 
     /* Preloaded ProxyMethod objects for methods in java.lang.Object */
-    private static final ProxyMethod hashCodeMethod;
-    private static final ProxyMethod equalsMethod;
-    private static final ProxyMethod toStringMethod;
+    private final static ProxyMethod hashCodeMethod;
+    private final static ProxyMethod equalsMethod;
+    private final static ProxyMethod toStringMethod;
 
     static {
         try {
@@ -242,7 +241,7 @@ final class ProxyGenerator extends ClassWriter {
          * List of return types that are not yet known to be
          * assignable from ("covered" by) any of the others.
          */
-        LinkedList<Class<?>> uncoveredReturnTypes = new LinkedList<>();
+        ArrayList<Class<?>> uncoveredReturnTypes = new ArrayList<>();
 
         nextNewReturnType:
         for (ProxyMethod pm : methods) {
