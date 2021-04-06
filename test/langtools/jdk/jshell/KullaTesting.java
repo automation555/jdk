@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -82,6 +82,7 @@ import static java.util.stream.Collectors.toSet;
 import static jdk.jshell.Snippet.Status.*;
 import static org.testng.Assert.*;
 import static jdk.jshell.Snippet.SubKind.METHOD_SUBKIND;
+import jdk.jshell.SourceCodeAnalysis.CompletionContext;
 import jdk.jshell.SourceCodeAnalysis.Documentation;
 
 public class KullaTesting {
@@ -897,11 +898,19 @@ public class KullaTesting {
     }
 
     public void assertCompletion(String code, String... expected) {
-        assertCompletion(code, null, expected);
+        assertCompletion(code, CompletionContext.SNIPPET, expected);
+    }
+
+    public void assertCompletion(String code, CompletionContext context, String... expected) {
+        assertCompletion(code, null, context, expected);
     }
 
     public void assertCompletion(String code, Boolean isSmart, String... expected) {
-        List<String> completions = computeCompletions(code, isSmart);
+        assertCompletion(code, isSmart, CompletionContext.SNIPPET, expected);
+    }
+
+    public void assertCompletion(String code, Boolean isSmart, CompletionContext context, String... expected) {
+        List<String> completions = computeCompletions(code, isSmart, context);
         assertEquals(completions, Arrays.asList(expected), "Input: " + code + ", " + completions.toString());
     }
 
@@ -919,13 +928,17 @@ public class KullaTesting {
     }
 
     private List<String> computeCompletions(String code, Boolean isSmart) {
+        return computeCompletions(code, isSmart, CompletionContext.SNIPPET);
+    }
+
+    private List<String> computeCompletions(String code, Boolean isSmart, CompletionContext context) {
         waitIndexingFinished();
 
         int cursor =  code.indexOf('|');
         code = code.replace("|", "");
         assertTrue(cursor > -1, "'|' expected, but not found in: " + code);
         List<Suggestion> completions =
-                getAnalysis().completionSuggestions(code, cursor, new int[1]); //XXX: ignoring anchor for now
+                getAnalysis().completionSuggestions(code, cursor, context, new int[1]); //XXX: ignoring anchor for now
         return completions.stream()
                           .filter(s -> isSmart == null || isSmart == s.matchesType())
                           .map(s -> s.continuation())
@@ -984,6 +997,16 @@ public class KullaTesting {
                                           .collect(Collectors.toSet());
         Set<String> expectedSet = Stream.of(expected).collect(Collectors.toSet());
         assertEquals(docSet, expectedSet, "Input: " + code);
+    }
+
+    public void assertDocumentationURL(String code, CompletionContext context, String... expected) {
+        int cursor =  code.indexOf('|');
+        code = code.replace("|", "");
+        assertTrue(cursor > -1, "'|' expected, but not found in: " + code);
+        List<Documentation> documentation = getAnalysis().documentation(code, cursor, context, false);
+        Set<String> uriSet = documentation.stream().map(doc -> doc.uri().toString()).collect(Collectors.toSet());
+        Set<String> expectedSet = Stream.of(expected).collect(Collectors.toSet());
+        assertEquals(uriSet, expectedSet, "Input: " + code);
     }
 
     public enum ClassType {
