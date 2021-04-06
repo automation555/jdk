@@ -804,7 +804,7 @@ class StoreVectorMaskedNode : public StoreVectorNode {
  public:
   StoreVectorMaskedNode(Node* c, Node* mem, Node* dst, Node* src, const TypePtr* at, Node* mask)
    : StoreVectorNode(c, mem, dst, at, src) {
-    assert(mask->bottom_type()->is_vectmask(), "sanity");
+    assert(mask->bottom_type()->is_long(), "sanity");
     init_class_id(Class_StoreVector);
     set_mismatched_access();
     add_req(mask);
@@ -822,7 +822,7 @@ class LoadVectorMaskedNode : public LoadVectorNode {
  public:
   LoadVectorMaskedNode(Node* c, Node* mem, Node* src, const TypePtr* at, const TypeVect* vt, Node* mask)
    : LoadVectorNode(c, mem, src, at, vt) {
-    assert(mask->bottom_type()->is_vectmask(), "sanity");
+    assert(mask->bottom_type()->is_long(), "sanity");
     init_class_id(Class_LoadVector);
     set_mismatched_access();
     add_req(mask);
@@ -845,9 +845,6 @@ class VectorMaskGenNode : public TypeNode {
   virtual int Opcode() const;
   const Type* get_elem_type()  { return _elemType;}
   virtual  uint  size_of() const { return sizeof(VectorMaskGenNode); }
-  virtual uint  ideal_reg() const {
-    return Op_RegVectMask;
-  }
 
   private:
    const Type* _elemType;
@@ -1227,6 +1224,17 @@ class VectorLoadMaskNode : public VectorNode {
 
   virtual int Opcode() const;
   virtual Node* Identity(PhaseGVN* phase);
+  virtual bool cmp( const Node &n ) const {
+    // The vector types for mask nodes can be treated equal if they are compatible.
+    return vect_type()->mask_compatible(((VectorLoadMaskNode&)n).vect_type());
+  }
+
+  virtual uint hash() const {
+    // Compute the hash value based on the vector length and element size
+    // for mask nodes. Note that the same element size can be verified with
+    // the same length and same length in bytes.
+    return Node::hash() + (intptr_t)length_in_bytes() + (intptr_t)length();
+  }
 };
 
 class VectorStoreMaskNode : public VectorNode {
