@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -37,6 +37,10 @@ class  PhaseIterGVN;
 class PhaseMacroExpand : public Phase {
 private:
   PhaseIterGVN &_igvn;
+
+#ifndef PRODUCT
+  static int _eliminated_string_allocation;
+#endif
 
 public:
   // Helper methods roughly modeled after GraphKit:
@@ -82,7 +86,14 @@ public:
 
 private:
   // projections extracted from a call node
-  CallProjections _callprojs;
+  ProjNode *_fallthroughproj;
+  ProjNode *_fallthroughcatchproj;
+  ProjNode *_ioproj_fallthrough;
+  ProjNode *_ioproj_catchall;
+  ProjNode *_catchallcatchproj;
+  ProjNode *_memproj_fallthrough;
+  ProjNode *_memproj_catchall;
+  ProjNode *_resproj;
 
   // Additional data collected during macro expansion
   bool _has_locks;
@@ -99,10 +110,13 @@ private:
   Node *value_from_mem_phi(Node *mem, BasicType ft, const Type *ftype, const TypeOopPtr *adr_t, AllocateNode *alloc, Node_Stack *value_phis, int level);
 
   bool eliminate_boxing_node(CallStaticJavaNode *boxing);
+  bool eliminate_strcpy_node(ArrayCopyNode* ac);
   bool eliminate_allocate_node(AllocateNode *alloc);
   bool can_eliminate_allocation(AllocateNode *alloc, GrowableArray <SafePointNode *>& safepoints);
   bool scalar_replacement(AllocateNode *alloc, GrowableArray <SafePointNode *>& safepoints_done);
   void process_users_of_allocation(CallNode *alloc);
+  Node* get_offset_adr_from_ac(ArrayCopyNode* ac, Node*& src_adr, Node* offset = nullptr);
+  void process_users_of_string_allocation(AllocateArrayNode* alloc, ArrayCopyNode* ac);
 
   void eliminate_gc_barrier(Node *p2x);
   void mark_eliminated_box(Node* box, Node* obj);
@@ -192,6 +206,7 @@ private:
   CallNode* make_slow_call(CallNode *oldcall, const TypeFunc* slow_call_type, address slow_call,
                            const char* leaf_name, Node* slow_path, Node* parm0, Node* parm1,
                            Node* parm2);
+  void extract_call_projections(CallNode *call);
 
   Node* initialize_object(AllocateNode* alloc,
                           Node* control, Node* rawmem, Node* object,
@@ -199,7 +214,8 @@ private:
                           Node* size_in_bytes);
 
   Node* make_arraycopy_load(ArrayCopyNode* ac, intptr_t offset, Node* ctl, Node* mem, BasicType ft, const Type *ftype, AllocateNode *alloc);
-
+  void sort_macro_for_strcpy_opt();
+  void eliminate_allocation_common(CallNode* alloc);
 public:
   PhaseMacroExpand(PhaseIterGVN &igvn) : Phase(Macro_Expand), _igvn(igvn), _has_locks(false) {
     _igvn.set_delay_transform(true);
@@ -222,6 +238,7 @@ public:
                             intx lines);
   void expand_dtrace_alloc_probe(AllocateNode* alloc, Node* fast_oop, Node*&fast_oop_ctrl, Node*&fast_oop_rawmem);
   void expand_initialize_membar(AllocateNode* alloc, InitializeNode* init, Node*&fast_oop_ctrl, Node*&fast_oop_rawmem);
+  static void print_statistics() PRODUCT_RETURN;
 };
 
 #endif // SHARE_OPTO_MACRO_HPP
