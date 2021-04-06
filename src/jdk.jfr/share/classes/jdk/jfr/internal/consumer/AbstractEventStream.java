@@ -31,6 +31,7 @@ import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
@@ -52,7 +53,7 @@ import jdk.jfr.internal.SecuritySupport;
  * an event stream.
  */
 public abstract class AbstractEventStream implements EventStream {
-    private static final AtomicLong counter = new AtomicLong();
+    private final static AtomicLong counter = new AtomicLong();
 
     private final Object terminated = new Object();
     private final Runnable flushOperation = () -> dispatcher().runFlushActions();
@@ -73,13 +74,13 @@ public abstract class AbstractEventStream implements EventStream {
     }
 
     @Override
-    public abstract void start();
+    abstract public void start();
 
     @Override
-    public abstract void startAsync();
+    abstract public void startAsync();
 
     @Override
-    public abstract void close();
+    abstract public void close();
 
     protected final Dispatcher dispatcher() {
         if (streamConfiguration.hasChanged()) { // quick check
@@ -103,7 +104,7 @@ public abstract class AbstractEventStream implements EventStream {
 
     @Override
     public final void setStartTime(Instant startTime) {
-        Objects.nonNull(startTime);
+        Objects.requireNonNull(startTime);
         synchronized (streamConfiguration) {
             if (streamConfiguration.started) {
                 throw new IllegalStateException("Stream is already started");
@@ -233,7 +234,7 @@ public abstract class AbstractEventStream implements EventStream {
     }
 
 
-    protected final void onFlush() {
+    final protected void onFlush() {
        Runnable r = getFlushOperation();
        if (r != null) {
            r.run();
