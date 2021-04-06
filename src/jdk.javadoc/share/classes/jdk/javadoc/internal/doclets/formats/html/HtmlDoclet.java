@@ -127,7 +127,6 @@ public class HtmlDoclet extends AbstractDoclet {
                 // in standard.properties
                 { "doclet.Enum_Hierarchy", "doclet.Enum_Class_Hierarchy" },
                 { "doclet.Annotation_Type_Hierarchy", "doclet.Annotation_Interface_Hierarchy" },
-                { "doclet.Href_Annotation_Title", "doclet.Href_Annotation_Interface_Title" },
                 { "doclet.Href_Enum_Title", "doclet.Href_Enum_Class_Title" },
                 { "doclet.Annotation_Types", "doclet.Annotation_Interfaces" },
                 { "doclet.Annotation_Type_Members", "doclet.Annotation_Interface_Members" },
@@ -377,5 +376,12 @@ public class HtmlDoclet extends AbstractDoclet {
         messages.notice("doclet.Copying_File_0_To_File_1",
                 fromfile.toString(), path.getPath());
         toFile.copyFile(fromfile);
+    }
+
+    @Override
+    protected void finish() {
+        if (configuration.backgroundWriter != null) {
+            configuration.backgroundWriter.finish();
+        }
     }
 }
