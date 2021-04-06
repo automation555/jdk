@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -54,7 +54,6 @@ import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Properties;
@@ -218,7 +217,7 @@ public class URLClassPath {
         if (closed) {
             return Collections.emptyList();
         }
-        List<IOException> result = new LinkedList<>();
+        List<IOException> result = new ArrayList<>();
         for (Loader loader : loaders) {
             try {
                 loader.close();
@@ -600,7 +599,7 @@ public class URLClassPath {
             try {
                 url = new URL(base, ParseUtil.encodePath(name, false));
             } catch (MalformedURLException e) {
-                return null;
+                throw new IllegalArgumentException("name");
             }
 
             try {
@@ -636,7 +635,7 @@ public class URLClassPath {
             try {
                 url = new URL(base, ParseUtil.encodePath(name, false));
             } catch (MalformedURLException e) {
-                return null;
+                throw new IllegalArgumentException("name");
             }
             final URLConnection uc;
             try {
@@ -952,7 +951,7 @@ public class URLClassPath {
             Resource res;
             String[] jarFiles;
             int count = 0;
-            LinkedList<String> jarFilesList = null;
+            List<String> jarFilesList;
 
             /* If there no jar files in the index that can potential contain
              * this resource then return immediately.
