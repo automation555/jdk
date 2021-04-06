@@ -205,8 +205,6 @@ static char cpu_arch[] = "i386";
 static char cpu_arch[] = "amd64";
 #elif defined(ARM)
 static char cpu_arch[] = "arm";
-#elif defined(AARCH64)
-static char cpu_arch[] = "aarch64";
 #elif defined(PPC32)
 static char cpu_arch[] = "ppc";
 #else
@@ -546,16 +544,6 @@ objc_registerThreadWithCollector_t objc_registerThreadWithCollectorFunction = NU
 static void *thread_native_entry(Thread *thread) {
 
   thread->record_stack_base_and_size();
-
-  // Try to randomize the cache line index of hot stack frames.
-  // This helps when threads of the same stack traces evict each other's
-  // cache lines. The threads can be either from the same JVM instance, or
-  // from different JVM instances. The benefit is especially true for
-  // processors with hyperthreading technology.
-  static int counter = 0;
-  int pid = os::current_process_id();
-  alloca(((pid ^ counter++) & 7) * 128);
-
   thread->initialize_thread_current();
 
   OSThread* osthread = thread->osthread();
@@ -1403,13 +1391,7 @@ void os::get_summary_cpu_info(char* buf, size_t buflen) {
       strncpy(machine, "", sizeof(machine));
   }
 
-  const char* emulated = "";
-#if defined(__APPLE__) && !defined(ZERO)
-  if (VM_Version::is_cpu_emulated()) {
-    emulated = " (EMULATED)";
-  }
-#endif
-  snprintf(buf, buflen, "\"%s\" %s%s %d MHz", model, machine, emulated, mhz);
+  snprintf(buf, buflen, "%s %s %d MHz", model, machine, mhz);
 }
 
 void os::print_memory_info(outputStream* st) {
@@ -2126,7 +2108,7 @@ int os::active_processor_count() {
   return _processor_count;
 }
 
-#if defined(__APPLE__) && defined(__x86_64__)
+#ifdef __APPLE__
 uint os::processor_id() {
   // Get the initial APIC id and return the associated processor id. The initial APIC
   // id is limited to 8-bits, which means we can have at most 256 unique APIC ids. If
