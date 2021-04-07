@@ -38,9 +38,6 @@
 #include "MTLPaints.h"
 #include "MTLClip.h"
 #include "EncoderManager.h"
-#include "MTLSamplerManager.h"
-
-@class MTLStencilManager;
 
 // Constant from
 // https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf
@@ -77,8 +74,6 @@
 @property (strong) id<MTLBuffer>               vertexBuffer;
 
 @property (readonly) EncoderManager * encoderManager;
-@property (readonly) MTLSamplerManager * samplerManager;
-@property (readonly) MTLStencilManager * stencilManager;
 
 @property (strong)MTLPipelineStatesStorage*   pipelineStateStorage;
 @property (strong)MTLTexturePool*             texturePool;
@@ -177,7 +172,7 @@
                     M01:(jdouble) m01 M11:(jdouble) m11
                     M02:(jdouble) m02 M12:(jdouble) m12;
 
-- (void)reset;
+
 - (void)resetPaint;
 - (void)setColorPaint:(int)pixel;
 - (void)setGradientPaintUseMask:(jboolean)useMask

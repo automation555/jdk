@@ -23,6 +23,8 @@
  * questions.
  */
 
+#ifndef HEADLESS
+
 #include <stdlib.h>
 
 #include "sun_java2d_SunGraphics2D.h"
@@ -30,8 +32,6 @@
 #include "jlong.h"
 #import "MTLContext.h"
 #include "MTLRenderQueue.h"
-#import "MTLSamplerManager.h"
-#import "MTLStencilManager.h"
 
 
 extern jboolean MTLSD_InitMTLWindow(JNIEnv *env, MTLSDOps *mtlsdo);
@@ -92,13 +92,8 @@ MTLTransform* tempTransform = nil;
     [self onComplete];
 
     [_pooledTextures release];
-    _pooledTextures = nil;
-
     [_commandBuffer release];
-    _commandBuffer = nil;
-
     [_lock release];
-    _lock = nil;
     [super dealloc];
 }
 
@@ -115,15 +110,12 @@ MTLTransform* tempTransform = nil;
     NSObject*          _bufImgOp; // TODO: pass as parameter of IsoBlit
 
     EncoderManager * _encoderManager;
-    MTLSamplerManager * _samplerManager;
-    MTLStencilManager * _stencilManager;
 }
 
 @synthesize textureFunction,
             vertexCacheEnabled, aaEnabled, device, pipelineStateStorage,
             commandQueue, blitCommandQueue, vertexBuffer,
-            texturePool, paint=_paint, encoderManager=_encoderManager,
-            samplerManager=_samplerManager, stencilManager=_stencilManager;
+            texturePool, paint=_paint;
 
 extern void initSamplers(id<MTLDevice> device);
 
@@ -147,8 +139,6 @@ extern void initSamplers(id<MTLDevice> device);
 
         _encoderManager = [[EncoderManager alloc] init];
         [_encoderManager setContext:self];
-        _samplerManager = [[MTLSamplerManager alloc] initWithDevice:device];
-        _stencilManager = [[MTLStencilManager alloc] initWithDevice:device];
         _composite = [[MTLComposite alloc] init];
         _paint = [[MTLPaint alloc] init];
         _transform = [[MTLTransform alloc] init];
@@ -162,6 +152,8 @@ extern void initSamplers(id<MTLDevice> device);
         blitCommandQueue = [device newCommandQueue];
 
         _tempTransform = [[MTLTransform alloc] init];
+
+        initSamplers(device);
     }
     return self;
 }
@@ -169,61 +161,18 @@ extern void initSamplers(id<MTLDevice> device);
 - (void)dealloc {
     J2dTraceLn(J2D_TRACE_INFO, "MTLContext.dealloc");
 
-    // TODO : Check that texturePool is completely released.
-    // texturePool content is released in MTLCommandBufferWrapper.onComplete()
-    //self.texturePool = nil;
+    self.texturePool = nil;
     self.vertexBuffer = nil;
     self.commandQueue = nil;
     self.blitCommandQueue = nil;
     self.pipelineStateStorage = nil;
-
-    if (_encoderManager != nil) {
-        [_encoderManager release];
-        _encoderManager = nil;
-    }
-
-    if (_samplerManager != nil) {
-        [_samplerManager release];
-        _samplerManager = nil;
-    }
-
-    if (_stencilManager != nil) {
-        [_stencilManager release];
-        _stencilManager = nil;
-    }
-
-    if (_composite != nil) {
-        [_composite release];
-        _composite = nil;
-    }
-
-    if (_paint != nil) {
-        [_paint release];
-        _paint = nil;
-    }
-
-    if (_transform != nil) {
-        [_transform release];
-        _transform = nil;
-    }
-
-    if (_tempTransform != nil) {
-        [_tempTransform release];
-        _tempTransform = nil;
-    }
-
-    if (_clip != nil) {
-        [_clip release];
-        _clip = nil;
-    }
-
+    [_encoderManager release];
+    [_composite release];
+    [_paint release];
+    [_transform release];
+    [_tempTransform release];
+    [_clip release];
     [super dealloc];
-}
-
-- (void) reset {
-    J2dTraceLn(J2D_TRACE_VERBOSE, "MTLContext : reset");
-
-    // Add code for context state reset here
 }
 
  - (MTLCommandBufferWrapper *) getCommandBufferWrapper {
@@ -263,7 +212,7 @@ extern void initSamplers(id<MTLDevice> device);
         // initialize the surface as an MTLSD_WINDOW
         if (!MTLSD_InitMTLWindow(env, dstOps)) {
             J2dRlsTraceLn(J2D_TRACE_ERROR,
-                          "MTLContext_SetSurfaces: could not init MTL window");
+                          "MTLContext_SetSurfaces: could not init OGL window");
             return NULL;
         }
     }
@@ -490,3 +439,5 @@ extern void initSamplers(id<MTLDevice> device);
 }
 
 @end
+
+#endif /* !HEADLESS */

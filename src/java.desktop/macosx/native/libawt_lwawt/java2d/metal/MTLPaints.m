@@ -23,8 +23,12 @@
  * questions.
  */
 
+#ifndef HEADLESS
+
 #include "MTLPaints.h"
+
 #include "MTLClip.h"
+
 #include "common.h"
 
 #include "sun_java2d_SunGraphics2D.h"
@@ -52,16 +56,13 @@
 static MTLRenderPipelineDescriptor * templateRenderPipelineDesc = nil;
 static MTLRenderPipelineDescriptor * templateTexturePipelineDesc = nil;
 static MTLRenderPipelineDescriptor * templateAATexturePipelineDesc = nil;
-static MTLRenderPipelineDescriptor * templateLCDPipelineDesc = nil;
-static MTLRenderPipelineDescriptor * templateAAPipelineDesc = nil;
-static void
-setTxtUniforms(MTLContext *mtlc, int color, id <MTLRenderCommandEncoder> encoder, int interpolation, bool repeat,
-               jfloat extraAlpha, const SurfaceRasterFlags *srcFlags, const SurfaceRasterFlags *dstFlags, int mode);
+static void setTxtUniforms(
+        id<MTLRenderCommandEncoder> encoder, int color, int mode, int interpolation, bool repeat, jfloat extraAlpha,
+        const SurfaceRasterFlags * srcFlags, const SurfaceRasterFlags * dstFlags
+);
 
 static void initTemplatePipelineDescriptors() {
-    if (templateRenderPipelineDesc != nil && templateTexturePipelineDesc != nil &&
-        templateAATexturePipelineDesc != nil && templateLCDPipelineDesc != nil &&
-        templateAAPipelineDesc != nil)
+    if (templateRenderPipelineDesc != nil && templateTexturePipelineDesc != nil)
         return;
 
     MTLVertexDescriptor *vertDesc = [[MTLVertexDescriptor new] autorelease];
@@ -96,44 +97,6 @@ static void initTemplatePipelineDescriptors() {
     templateAATexturePipelineDesc = [templateTexturePipelineDesc copy];
     templateAATexturePipelineDesc.label = @"template_aa_texture";
 
-    templateLCDPipelineDesc = [MTLRenderPipelineDescriptor new];
-    templateLCDPipelineDesc.sampleCount = 1;
-    templateLCDPipelineDesc.vertexDescriptor = vertDesc;
-    templateLCDPipelineDesc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
-    templateLCDPipelineDesc.vertexDescriptor.attributes[VertexAttributeTexPos].format = MTLVertexFormatFloat2;
-    templateLCDPipelineDesc.vertexDescriptor.attributes[VertexAttributeTexPos].offset = 2*sizeof(float);
-    templateLCDPipelineDesc.vertexDescriptor.attributes[VertexAttributeTexPos].bufferIndex = MeshVertexBuffer;
-    templateLCDPipelineDesc.vertexDescriptor.layouts[MeshVertexBuffer].stride = sizeof(struct TxtVertex);
-    templateLCDPipelineDesc.vertexDescriptor.layouts[MeshVertexBuffer].stepRate = 1;
-    templateLCDPipelineDesc.vertexDescriptor.layouts[MeshVertexBuffer].stepFunction = MTLVertexStepFunctionPerVertex;
-    templateLCDPipelineDesc.label = @"template_lcd";
-
-    vertDesc = [[MTLVertexDescriptor new] autorelease];
-    vertDesc.attributes[VertexAttributePosition].format = MTLVertexFormatFloat2;
-    vertDesc.attributes[VertexAttributePosition].offset = 0;
-    vertDesc.attributes[VertexAttributePosition].bufferIndex = MeshVertexBuffer;
-    vertDesc.layouts[MeshVertexBuffer].stride = sizeof(struct AAVertex);
-    vertDesc.layouts[MeshVertexBuffer].stepRate = 1;
-    vertDesc.layouts[MeshVertexBuffer].stepFunction = MTLVertexStepFunctionPerVertex;
-
-    templateAAPipelineDesc = [MTLRenderPipelineDescriptor new];
-    templateAAPipelineDesc.sampleCount = 1;
-    templateAAPipelineDesc.vertexDescriptor = vertDesc;
-    templateAAPipelineDesc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
-    templateAAPipelineDesc.colorAttachments[0].rgbBlendOperation =   MTLBlendOperationAdd;
-    templateAAPipelineDesc.colorAttachments[0].alphaBlendOperation = MTLBlendOperationAdd;
-    templateAAPipelineDesc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorOne;
-    templateAAPipelineDesc.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
-    templateAAPipelineDesc.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
-    templateAAPipelineDesc.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
-    templateAAPipelineDesc.colorAttachments[0].blendingEnabled = YES;
-    templateAAPipelineDesc.vertexDescriptor.attributes[VertexAttributeTexPos].format = MTLVertexFormatFloat2;
-    templateAAPipelineDesc.vertexDescriptor.attributes[VertexAttributeTexPos].offset = 2*sizeof(float);
-    templateAAPipelineDesc.vertexDescriptor.attributes[VertexAttributeTexPos].bufferIndex = MeshVertexBuffer;
-    templateAAPipelineDesc.vertexDescriptor.attributes[VertexAttributeITexPos].format = MTLVertexFormatFloat2;
-    templateAAPipelineDesc.vertexDescriptor.attributes[VertexAttributeITexPos].offset = 4*sizeof(float);
-    templateAAPipelineDesc.vertexDescriptor.attributes[VertexAttributeITexPos].bufferIndex = MeshVertexBuffer;
-    templateAAPipelineDesc.label = @"template_aa";
 }
 
 
@@ -201,18 +164,9 @@ jint _color;
         if (renderOptions->isText) {
             fragShader = @"frag_text";
         }
-        if (renderOptions->isLCD) {
-            vertShader = @"vert_txt_lcd";
-            fragShader = @"lcd_color";
-            rpDesc = [[templateLCDPipelineDesc copy] autorelease];
-        }
-        setTxtUniforms(mtlc, _color, encoder,
+        setTxtUniforms(encoder, _color, 1,
                        renderOptions->interpolation, NO, [mtlc.composite getExtraAlpha], &renderOptions->srcFlags,
-                       &renderOptions->dstFlags, 1);
-    } else if (renderOptions->isAAShader) {
-        vertShader = @"vert_col_aa";
-        fragShader = @"frag_col_aa";
-        rpDesc = [[templateAAPipelineDesc copy] autorelease];
+                       &renderOptions->dstFlags);
     } else {
         rpDesc = [[templateRenderPipelineDesc copy] autorelease];
     }
@@ -249,9 +203,9 @@ jint _color;
         fragShader = @"frag_txt_xorMode";
         rpDesc = [[templateTexturePipelineDesc copy] autorelease];
 
-        setTxtUniforms(mtlc, col, encoder,
+        setTxtUniforms(encoder, col, 1,
                        renderOptions->interpolation, NO, [mtlc.composite getExtraAlpha],
-                       &renderOptions->srcFlags, &renderOptions->dstFlags, 1);
+                       &renderOptions->srcFlags, &renderOptions->dstFlags);
         [encoder setFragmentBytes:&xorColor length:sizeof(xorColor) atIndex:0];
 
         [encoder setFragmentTexture:dstOps->pTexture atIndex:1];
@@ -404,7 +358,6 @@ jint _color;
 {
     // This block is not reached in current implementation.
     // Gradient paint XOR mode rendering uses a tile based rendering using a SW pipe (similar to OGL)
-    initTemplatePipelineDescriptors();
     NSString* vertShader = @"vert_grad_xorMode";
     NSString* fragShader = @"frag_grad_xorMode";
     MTLRenderPipelineDescriptor *rpDesc = [[templateRenderPipelineDesc copy] autorelease];
@@ -502,7 +455,6 @@ jint _color;
     pipelineStateStorage:(MTLPipelineStatesStorage *)pipelineStateStorage
 
 {
-    initTemplatePipelineDescriptors();
     MTLRenderPipelineDescriptor *rpDesc = nil;
 
     NSString *vertShader = @"vert_grad";
@@ -666,7 +618,6 @@ jint _color;
            renderOptions:(const RenderOptions *)renderOptions
     pipelineStateStorage:(MTLPipelineStatesStorage *)pipelineStateStorage
 {
-    initTemplatePipelineDescriptors();
     MTLRenderPipelineDescriptor *rpDesc = nil;
 
     NSString *vertShader = @"vert_grad";
@@ -790,9 +741,9 @@ jint _color;
         [encoder setFragmentTexture:_paintTexture atIndex:0];
     }
     const SurfaceRasterFlags srcFlags = {_isOpaque, renderOptions->srcFlags.isPremultiplied};
-    setTxtUniforms(mtlc, 0, encoder,
+    setTxtUniforms(encoder, 0, 0,
                    renderOptions->interpolation, YES, [mtlc.composite getExtraAlpha],
-                   &srcFlags, &renderOptions->dstFlags, 0);
+                   &srcFlags, &renderOptions->dstFlags);
 
     id <MTLRenderPipelineState> pipelineState = [pipelineStateStorage getPipelineState:rpDesc
                                                                         vertexShaderId:vertShader
@@ -808,7 +759,6 @@ jint _color;
                   renderOptions:(const RenderOptions *)renderOptions
            pipelineStateStorage:(MTLPipelineStatesStorage *)pipelineStateStorage
 {
-    initTemplatePipelineDescriptors();
     // This block is not reached in current implementation.
     // Texture paint XOR mode rendering uses a tile based rendering using a SW pipe (similar to OGL)
     NSString* vertShader = @"vert_tp_xorMode";
@@ -872,12 +822,62 @@ jint _color;
     return @"unknown-paint";
 }
 
-static void
-setTxtUniforms(MTLContext *mtlc, int color, id <MTLRenderCommandEncoder> encoder, int interpolation, bool repeat,
-               jfloat extraAlpha, const SurfaceRasterFlags *srcFlags, const SurfaceRasterFlags *dstFlags, int mode) {
+static id<MTLSamplerState> samplerNearestClamp = nil;
+static id<MTLSamplerState> samplerLinearClamp = nil;
+static id<MTLSamplerState> samplerNearestRepeat = nil;
+static id<MTLSamplerState> samplerLinearRepeat = nil;
+
+void initSamplers(id<MTLDevice> device) {
+    // TODO: move this code into SamplerManager (need implement)
+
+    if (samplerNearestClamp != nil)
+        return;
+
+    MTLSamplerDescriptor *samplerDescriptor = [[MTLSamplerDescriptor new] autorelease];
+
+    samplerDescriptor.rAddressMode = MTLSamplerAddressModeClampToEdge;
+    samplerDescriptor.sAddressMode = MTLSamplerAddressModeClampToEdge;
+    samplerDescriptor.tAddressMode = MTLSamplerAddressModeClampToEdge;
+
+    samplerDescriptor.minFilter = MTLSamplerMinMagFilterNearest;
+    samplerDescriptor.magFilter = MTLSamplerMinMagFilterNearest;
+    samplerNearestClamp = [device newSamplerStateWithDescriptor:samplerDescriptor];
+
+    samplerDescriptor.minFilter = MTLSamplerMinMagFilterLinear;
+    samplerDescriptor.magFilter = MTLSamplerMinMagFilterLinear;
+    samplerLinearClamp = [device newSamplerStateWithDescriptor:samplerDescriptor];
+
+    samplerDescriptor.rAddressMode = MTLSamplerAddressModeRepeat;
+    samplerDescriptor.sAddressMode = MTLSamplerAddressModeRepeat;
+    samplerDescriptor.tAddressMode = MTLSamplerAddressModeRepeat;
+
+    samplerDescriptor.minFilter = MTLSamplerMinMagFilterNearest;
+    samplerDescriptor.magFilter = MTLSamplerMinMagFilterNearest;
+    samplerNearestRepeat = [device newSamplerStateWithDescriptor:samplerDescriptor];
+
+    samplerDescriptor.minFilter = MTLSamplerMinMagFilterLinear;
+    samplerDescriptor.magFilter = MTLSamplerMinMagFilterLinear;
+    samplerLinearRepeat = [device newSamplerStateWithDescriptor:samplerDescriptor];
+}
+
+static void setSampler(id<MTLRenderCommandEncoder> encoder, int interpolation, bool repeat) {
+    id<MTLSamplerState> sampler;
+    if (repeat) {
+        sampler = interpolation == INTERPOLATION_BILINEAR ? samplerLinearRepeat : samplerNearestRepeat;
+    } else {
+        sampler = interpolation == INTERPOLATION_BILINEAR ? samplerLinearClamp : samplerNearestClamp;
+    }
+    [encoder setFragmentSamplerState:sampler atIndex:0];
+}
+
+static void setTxtUniforms(
+        id<MTLRenderCommandEncoder> encoder, int color, int mode, int interpolation, bool repeat, jfloat extraAlpha,
+        const SurfaceRasterFlags * srcFlags, const SurfaceRasterFlags * dstFlags
+) {
     struct TxtFrameUniforms uf = {RGBA_TO_V4(color), mode, srcFlags->isOpaque, dstFlags->isOpaque, extraAlpha};
     [encoder setFragmentBytes:&uf length:sizeof(uf) atIndex:FrameUniformBuffer];
-    [mtlc.samplerManager setSamplerWithEncoder:encoder interpolation:interpolation repeat:repeat];
+
+    setSampler(encoder, interpolation, repeat);
 }
 
 // For the current paint mode:
@@ -908,7 +908,7 @@ setTxtUniforms(MTLContext *mtlc, int color, id <MTLRenderCommandEncoder> encoder
                         FLOAT_ARR_TO_V4([rescaleOp getScaleFactors]), FLOAT_ARR_TO_V4([rescaleOp getOffsets])
                 };
                 [encoder setFragmentBytes:&uf length:sizeof(uf) atIndex:FrameUniformBuffer];
-                [mtlc.samplerManager setSamplerWithEncoder:encoder interpolation:renderOptions->interpolation repeat:NO];
+                setSampler(encoder, renderOptions->interpolation, NO);
             } else if ([bufImgOp isKindOfClass:[MTLConvolveOp class]]) {
                 MTLConvolveOp *convolveOp = bufImgOp;
                 fragShader = @"frag_txt_op_convolve";
@@ -919,7 +919,7 @@ setTxtUniforms(MTLContext *mtlc, int color, id <MTLRenderCommandEncoder> encoder
                         convolveOp.kernelSize, convolveOp.isEdgeZeroFill,
                 };
                 [encoder setFragmentBytes:&uf length:sizeof(uf) atIndex:FrameUniformBuffer];
-                [mtlc.samplerManager setSamplerWithEncoder:encoder interpolation:renderOptions->interpolation repeat:NO];
+                setSampler(encoder, renderOptions->interpolation, NO);
 
                 [encoder setFragmentBuffer:[convolveOp getBuffer] offset:0 atIndex:2];
             } else if ([bufImgOp isKindOfClass:[MTLLookupOp class]]) {
@@ -931,14 +931,14 @@ setTxtUniforms(MTLContext *mtlc, int color, id <MTLRenderCommandEncoder> encoder
                         FLOAT_ARR_TO_V4([lookupOp getOffset]), lookupOp.isUseSrcAlpha, lookupOp.isNonPremult,
                 };
                 [encoder setFragmentBytes:&uf length:sizeof(uf) atIndex:FrameUniformBuffer];
-                [mtlc.samplerManager setSamplerWithEncoder:encoder interpolation:renderOptions->interpolation repeat:NO];
+                setSampler(encoder, renderOptions->interpolation, NO);
                 [encoder setFragmentTexture:[lookupOp getLookupTexture] atIndex:1];
             }
         } else {
-            setTxtUniforms(mtlc, 0, encoder,
+            setTxtUniforms(encoder, 0, 0,
                            renderOptions->interpolation, NO, [mtlc.composite getExtraAlpha],
                            &renderOptions->srcFlags,
-                           &renderOptions->dstFlags, 0);
+                           &renderOptions->dstFlags);
 
         }
         id <MTLRenderPipelineState> pipelineState = [pipelineStateStorage getPipelineState:rpDesc
@@ -959,26 +959,26 @@ setTxtUniforms(MTLContext *mtlc, int color, id <MTLRenderCommandEncoder> encoder
            renderOptions:(const RenderOptions *)renderOptions
     pipelineStateStorage:(MTLPipelineStatesStorage *)pipelineStateStorage
 {
-    initTemplatePipelineDescriptors();
     if (renderOptions->isTexture) {
+        initTemplatePipelineDescriptors();
         jint xorColor = (jint) [mtlc.composite getXorColor];
         NSString * vertShader = @"vert_txt_xorMode";
         NSString * fragShader = @"frag_txt_xorMode";
         MTLRenderPipelineDescriptor * rpDesc = [[templateTexturePipelineDesc copy] autorelease];
 
         const int col = 0 ^ xorColor;
-        setTxtUniforms(mtlc, col, encoder,
+        setTxtUniforms(encoder, col, 0,
                        renderOptions->interpolation, NO, [mtlc.composite getExtraAlpha],
-                       &renderOptions->srcFlags, &renderOptions->dstFlags, 0);
+                       &renderOptions->srcFlags, &renderOptions->dstFlags);
         [encoder setFragmentBytes:&xorColor length:sizeof(xorColor) atIndex: 0];
 
         BMTLSDOps *dstOps = MTLRenderQueue_GetCurrentDestination();
         [encoder setFragmentTexture:dstOps->pTexture atIndex:1];
 
-        setTxtUniforms(mtlc, 0, encoder,
+        setTxtUniforms(encoder, 0, 0,
                        renderOptions->interpolation, NO, [mtlc.composite getExtraAlpha],
                        &renderOptions->srcFlags,
-                       &renderOptions->dstFlags, 0);
+                       &renderOptions->dstFlags);
 
         id <MTLRenderPipelineState> pipelineState = [pipelineStateStorage getPipelineState:rpDesc
                                                                             vertexShaderId:vertShader
@@ -991,3 +991,4 @@ setTxtUniforms(MTLContext *mtlc, int color, id <MTLRenderCommandEncoder> encoder
 }
 
 @end
+#endif /* !HEADLESS */

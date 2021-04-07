@@ -23,6 +23,8 @@
  * questions.
  */
 
+#ifndef HEADLESS
+
 #include <jlong.h>
 
 #include "MTLBufImgOps.h"
@@ -175,13 +177,13 @@
         } else if (numBands == 3) {
             // user supplied band for each of R/G/B; alpha band is unused
             for (int i = 0; i < 3; i++) {
-                bands[i] = PtrPixelsBand(tableValues, i, bandLength, bytesPerElem);
+                bands[i] = PtrAddBytes(tableValues, i*bandLength*bytesPerElem);
             }
             bands[3] = NULL;
         } else if (numBands == 4) {
             // user supplied band for each of R/G/B/A
             for (int i = 0; i < 4; i++) {
-                bands[i] = PtrPixelsBand(tableValues, i, bandLength, bytesPerElem);
+                bands[i] = PtrAddBytes(tableValues, i*bandLength*bytesPerElem);
             }
         }
 
@@ -221,3 +223,5 @@
 }
 
 @end
+
+#endif /* !HEADLESS */

@@ -55,7 +55,7 @@ final class MTLContext extends BufferedContext {
     /**
      * Makes the given GraphicsConfig's context current to its associated
      * "scratch surface".  Each GraphicsConfig maintains a native context
-     * (MTLDevice) as well as a native MTLTexture
+     * (MTLDevice) as well as a native pbuffer
      * known as the "scratch surface".  By making the context current to the
      * scratch surface, we are assured that we have a current context for
      * the relevant GraphicsConfig, and can therefore perform operations
@@ -128,6 +128,13 @@ final class MTLContext extends BufferedContext {
          */
         @Native
         static final int CAPS_EXT_GRAD_SHADER  = (FIRST_PRIVATE_CAP << 3);
+        /** Indicates the presence of the GL_ARB_texture_rectangle extension. */
+        @Native
+        static final int CAPS_EXT_TEXRECT      = (FIRST_PRIVATE_CAP << 4);
+        /** Indicates the presence of the GL_NV_texture_barrier extension. */
+        @Native
+        static final int CAPS_EXT_TEXBARRIER = (FIRST_PRIVATE_CAP << 5);
+
 
         public MTLContextCaps(int caps, String adapterId) {
             super(caps, adapterId);
@@ -147,6 +154,12 @@ final class MTLContext extends BufferedContext {
             }
             if ((caps & CAPS_EXT_GRAD_SHADER) != 0) {
                 sb.append("CAPS_EXT_GRAD_SHADER|");
+            }
+            if ((caps & CAPS_EXT_TEXRECT) != 0) {
+                sb.append("CAPS_EXT_TEXRECT|");
+            }
+            if ((caps & CAPS_EXT_TEXBARRIER) != 0) {
+                sb.append("CAPS_EXT_TEXBARRIER|");
             }
             return sb.toString();
         }

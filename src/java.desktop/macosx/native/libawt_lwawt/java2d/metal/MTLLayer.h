@@ -30,6 +30,8 @@
 #include <CoreVideo/CVDisplayLink.h>
 #import "common.h"
 
+#import <JavaNativeFoundation/JavaNativeFoundation.h>
+
 @interface MTLLayer : CAMetalLayer
 {
 @private

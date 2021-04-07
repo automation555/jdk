@@ -32,6 +32,7 @@ import java.awt.geom.AffineTransform;
 import java.awt.image.ColorModel;
 
 import sun.java2d.SurfaceData;
+import sun.java2d.opengl.CGLLayer;
 import sun.lwawt.LWGraphicsConfig;
 import sun.lwawt.macosx.CFRetainedResource;
 

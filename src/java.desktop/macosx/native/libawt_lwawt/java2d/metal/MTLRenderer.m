@@ -23,6 +23,8 @@
  * questions.
  */
 
+#ifndef HEADLESS
+
 #include <jlong.h>
 #include <jni_util.h>
 #include <math.h>
@@ -315,10 +317,6 @@ Java_sun_java2d_metal_MTLRenderer_drawPoly
     }
 }
 
-const int SCANLINE_MAX_VERTEX_SIZE = 4096;
-const int VERTEX_STRUCT_SIZE = 8;
-const int NUM_OF_VERTICES_PER_SCANLINE = 2;
-
 void
 MTLRenderer_DrawScanlines(MTLContext *mtlc, BMTLSDOps * dstOps,
                           jint scanlineCount, jint *scanlines)
@@ -329,80 +327,27 @@ MTLRenderer_DrawScanlines(MTLContext *mtlc, BMTLSDOps * dstOps,
             J2dTraceLn(J2D_TRACE_ERROR, "MTLRenderer_DrawScanlines: dest is null");
             return;
     }
-    RETURN_IF_NULL(scanlines);
-    int vertexSize = NUM_OF_VERTICES_PER_SCANLINE
-        * scanlineCount * VERTEX_STRUCT_SIZE;
-    J2dTraceLn1(J2D_TRACE_INFO, "MTLRenderer_DrawScanlines: Total vertex size : %d", vertexSize);
-    if (vertexSize == 0) return;
 
     id<MTLRenderCommandEncoder> mtlEncoder = [mtlc.encoderManager getRenderEncoder:dstOps];
 
     if (mtlEncoder == nil) return;
 
-    if (vertexSize <= SCANLINE_MAX_VERTEX_SIZE) {
-        struct Vertex verts[NUM_OF_VERTICES_PER_SCANLINE * scanlineCount];
+    struct Vertex verts[2*scanlineCount];
 
-        for (int j = 0, i = 0; j < scanlineCount; j++) {
-            // Translate each vertex by a fraction so
-            // that we hit pixel centers.
-            float x1 = ((float)*(scanlines++)) + 0.2f;
-            float x2 = ((float)*(scanlines++)) + 1.2f;
-            float y  = ((float)*(scanlines++)) + 0.5f;
-            struct Vertex v1 = {{x1, y}};
-            struct Vertex v2 = {{x2, y}};
-            verts[i++] = v1;
-            verts[i++] = v2;
-        }
-
-        [mtlEncoder setVertexBytes:verts length:sizeof(verts) atIndex:MeshVertexBuffer];
-        [mtlEncoder drawPrimitives:MTLPrimitiveTypeLine vertexStart:0
-            vertexCount:NUM_OF_VERTICES_PER_SCANLINE * scanlineCount];
-    } else {
-        int remainingScanlineCount = vertexSize;
-        do {
-            if (remainingScanlineCount > SCANLINE_MAX_VERTEX_SIZE) {
-                struct Vertex verts[SCANLINE_MAX_VERTEX_SIZE/ VERTEX_STRUCT_SIZE];
-
-                for (int j = 0, i = 0; j < (SCANLINE_MAX_VERTEX_SIZE / (VERTEX_STRUCT_SIZE * 2)); j++) {
-                    // Translate each vertex by a fraction so
-                    // that we hit pixel centers.
-                    float x1 = ((float)*(scanlines++)) + 0.2f;
-                    float x2 = ((float)*(scanlines++)) + 1.2f;
-                    float y  = ((float)*(scanlines++)) + 0.5f;
-                    struct Vertex v1 = {{x1, y}};
-                    struct Vertex v2 = {{x2, y}};
-                    verts[i++] = v1;
-                    verts[i++] = v2;
-                }
-
-                [mtlEncoder setVertexBytes:verts length:sizeof(verts) atIndex:MeshVertexBuffer];
-                [mtlEncoder drawPrimitives:MTLPrimitiveTypeLine vertexStart:0
-                    vertexCount:(SCANLINE_MAX_VERTEX_SIZE / VERTEX_STRUCT_SIZE)];
-                remainingScanlineCount -= SCANLINE_MAX_VERTEX_SIZE;
-            } else {
-                struct Vertex verts[remainingScanlineCount / VERTEX_STRUCT_SIZE];
-
-                for (int j = 0, i = 0; j < (remainingScanlineCount / (VERTEX_STRUCT_SIZE * 2)); j++) {
-                    // Translate each vertex by a fraction so
-                    // that we hit pixel centers.
-                    float x1 = ((float)*(scanlines++)) + 0.2f;
-                    float x2 = ((float)*(scanlines++)) + 1.2f;
-                    float y  = ((float)*(scanlines++)) + 0.5f;
-                    struct Vertex v1 = {{x1, y}};
-                    struct Vertex v2 = {{x2, y}};
-                    verts[i++] = v1;
-                    verts[i++] = v2;
-                }
-
-                [mtlEncoder setVertexBytes:verts length:sizeof(verts) atIndex:MeshVertexBuffer];
-                [mtlEncoder drawPrimitives:MTLPrimitiveTypeLine vertexStart:0
-                    vertexCount:(remainingScanlineCount / VERTEX_STRUCT_SIZE)];
-                remainingScanlineCount -= remainingScanlineCount;
-            }
-            J2dTraceLn1(J2D_TRACE_INFO,
-                "MTLRenderer_DrawScanlines: Remaining vertex size %d", remainingScanlineCount);
-        } while (remainingScanlineCount != 0);
+    for (int j = 0, i = 0; j < scanlineCount; j++) {
+        // Translate each vertex by a fraction so
+        // that we hit pixel centers.
+        float x1 = ((float)*(scanlines++)) + 0.2f;
+        float x2 = ((float)*(scanlines++)) + 1.2f;
+        float y  = ((float)*(scanlines++)) + 0.5f;
+        struct Vertex v1 = {{x1, y}};
+        struct Vertex v2 = {{x2, y}};
+        verts[i++] = v1;
+        verts[i++] = v2;
     }
+
+    [mtlEncoder setVertexBytes:verts length:sizeof(verts) atIndex:MeshVertexBuffer];
+    [mtlEncoder drawPrimitives:MTLPrimitiveTypeLine vertexStart:0 vertexCount:2*scanlineCount];
 }
 
 void
@@ -731,6 +676,54 @@ static jint vertexCacheIndex = 0;
         AA_ADD_VERTEX(ou11, ov11, iu11, iv11, DX1, DY1); \
     } while (0)
 
+static MTLRenderPipelineDescriptor * templateAAPipelineDesc = nil;
+
+static jboolean
+setupAAShaderState(id<MTLRenderCommandEncoder> encoder,
+                    MTLContext *mtlc,
+                    MTLSDOps *dstOps)
+{
+    if (templateAAPipelineDesc == nil) {
+
+        MTLVertexDescriptor *vertDesc = [[MTLVertexDescriptor new] autorelease];
+        vertDesc.attributes[VertexAttributePosition].format = MTLVertexFormatFloat2;
+        vertDesc.attributes[VertexAttributePosition].offset = 0;
+        vertDesc.attributes[VertexAttributePosition].bufferIndex = MeshVertexBuffer;
+        vertDesc.layouts[MeshVertexBuffer].stride = sizeof(struct AAVertex);
+        vertDesc.layouts[MeshVertexBuffer].stepRate = 1;
+        vertDesc.layouts[MeshVertexBuffer].stepFunction = MTLVertexStepFunctionPerVertex;
+
+        templateAAPipelineDesc = [MTLRenderPipelineDescriptor new];
+        templateAAPipelineDesc.sampleCount = 1;
+        templateAAPipelineDesc.vertexDescriptor = vertDesc;
+        templateAAPipelineDesc.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+        templateAAPipelineDesc.colorAttachments[0].rgbBlendOperation =   MTLBlendOperationAdd;
+        templateAAPipelineDesc.colorAttachments[0].alphaBlendOperation = MTLBlendOperationAdd;
+        templateAAPipelineDesc.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorOne;
+        templateAAPipelineDesc.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
+        templateAAPipelineDesc.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+        templateAAPipelineDesc.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+        templateAAPipelineDesc.colorAttachments[0].blendingEnabled = YES;
+        templateAAPipelineDesc.vertexDescriptor.attributes[VertexAttributeTexPos].format = MTLVertexFormatFloat2;
+        templateAAPipelineDesc.vertexDescriptor.attributes[VertexAttributeTexPos].offset = 2*sizeof(float);
+        templateAAPipelineDesc.vertexDescriptor.attributes[VertexAttributeTexPos].bufferIndex = MeshVertexBuffer;
+        templateAAPipelineDesc.vertexDescriptor.attributes[VertexAttributeITexPos].format = MTLVertexFormatFloat2;
+        templateAAPipelineDesc.vertexDescriptor.attributes[VertexAttributeITexPos].offset = 4*sizeof(float);
+        templateAAPipelineDesc.vertexDescriptor.attributes[VertexAttributeITexPos].bufferIndex = MeshVertexBuffer;
+        templateAAPipelineDesc.label = @"template_aa";
+    }
+
+    id<MTLRenderPipelineState> pipelineState =
+                [mtlc.pipelineStateStorage
+                    getPipelineState:templateAAPipelineDesc
+                    vertexShaderId:@"vert_col_aa"
+                    fragmentShaderId:@"frag_col_aa"
+                   ];
+
+    [encoder setRenderPipelineState:pipelineState];
+    return JNI_TRUE;
+}
+
 #define ADJUST_PGRAM(V1, DV, V2) \
     do { \
         if ((DV) >= 0) { \
@@ -822,7 +815,8 @@ MTLRenderer_FillAAParallelogram(MTLContext *mtlc, BMTLSDOps * dstOps,
     TRANSFORM(om, ou22, ov22, bx22, by22);
 
     id<MTLRenderCommandEncoder> encoder =
-        [mtlc.encoderManager getAAShaderRenderEncoder:dstOps];
+        [mtlc.encoderManager getRenderEncoder:dstOps];
+    setupAAShaderState(encoder, mtlc, dstOps);
 
     AA_ADD_TRIANGLES(ou11, ov11, 5.f, 5.f, ou21, ov21, 6.f, 5.f, ou22, ov22, 6.f, 6.f, ou12, ov12, 5.f, 5.f, bx11, by11, bx22, by22);
     [encoder setVertexBytes:aaVertices length:sizeof(aaVertices) atIndex:MeshVertexBuffer];
@@ -885,7 +879,8 @@ MTLRenderer_FillAAParallelogramInnerOuter(MTLContext *mtlc, MTLSDOps *dstOps,
     TRANSFORM(im, iu22, iv22, bx22, by22);
 
     id<MTLRenderCommandEncoder> encoder =
-        [mtlc.encoderManager getAAShaderRenderEncoder:dstOps];
+        [mtlc.encoderManager getRenderEncoder:dstOps];
+    setupAAShaderState(encoder, mtlc, dstOps);
 
     AA_ADD_TRIANGLES(ou11, ov11, iu11, iv11, ou21, ov21, iu21, iv21, ou22, ov22, iu22, iv22, ou12, ov12, iu12, iv12, bx11, by11, bx22, by22);
     [encoder setVertexBytes:aaVertices length:sizeof(aaVertices) atIndex:MeshVertexBuffer];
@@ -959,3 +954,4 @@ MTLRenderer_DrawAAParallelogram(MTLContext *mtlc, BMTLSDOps * dstOps,
                                         odx12, ody12);
     }
 }
+#endif /* !HEADLESS */

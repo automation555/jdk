@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -152,9 +152,9 @@ public final class MTLGraphicsConfig extends CGraphicsConfig
             cfginfo = getMTLConfigInfo(displayID, mtlShadersLib);
             if (cfginfo != 0L) {
                 textureSize = nativeGetMaxTextureSize();
-                // TODO : This clamping code is same as in OpenGL.
-                // Whether we need such clamping or not in case of Metal
-                // will be pursued under 8260644
+                // 7160609: GL still fails to create a square texture of this
+                // size. Half should be safe enough.
+                // Explicitly not support a texture more than 2^14, see 8010999.
                 textureSize = textureSize <= 16384 ? textureSize / 2 : 8192;
                 MTLContext.setScratchSurface(cfginfo);
             }

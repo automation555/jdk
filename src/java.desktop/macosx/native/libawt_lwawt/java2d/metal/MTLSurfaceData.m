@@ -312,6 +312,12 @@ MTLSD_InitMTLWindow(JNIEnv *env, BMTLSDOps *bmtlsdo)
     return JNI_TRUE;
 }
 
+void
+MTLSD_SwapBuffers(JNIEnv *env, jlong pPeerData)
+{
+    J2dTraceLn(J2D_TRACE_ERROR, "MTLSD_SwapBuffers -- :TODO");
+}
+
 #pragma mark -
 #pragma mark "--- MTLSurfaceData methods ---"
 
@@ -372,11 +378,11 @@ Java_sun_java2d_metal_MTLSurfaceData_initOps
 
 JNIEXPORT void JNICALL
 Java_sun_java2d_metal_MTLSurfaceData_clearWindow
-(JNIEnv *env, jobject mtlsd)
+(JNIEnv *env, jobject cglsd)
 {
     J2dTraceLn(J2D_TRACE_INFO, "MTLSurfaceData_clearWindow");
 
-    BMTLSDOps *bmtlsdo = (MTLSDOps*) SurfaceData_GetOps(env, mtlsd);
+    BMTLSDOps *bmtlsdo = (MTLSDOps*) SurfaceData_GetOps(env, cglsd);
     MTLSDOps *mtlsdo = (MTLSDOps*) bmtlsdo->privOps;
 
     mtlsdo->peerData = NULL;

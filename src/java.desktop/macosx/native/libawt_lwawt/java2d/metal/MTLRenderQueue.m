@@ -23,6 +23,8 @@
  * questions.
  */
 
+#ifndef HEADLESS
+
 #include <stdlib.h>
 
 #include "sun_java2d_pipe_BufferedOpCodes.h"
@@ -51,6 +53,7 @@ jint mtlPreviousOp = MTL_OP_INIT;
  * and WGL) source files.
  */
 extern void MTLGC_DestroyMTLGraphicsConfig(jlong pConfigInfo);
+extern void MTLSD_SwapBuffers(JNIEnv *env, jlong window);
 
 void MTLRenderQueue_CheckPreviousOp(jint op) {
 
@@ -583,17 +586,11 @@ Java_sun_java2d_metal_MTLRenderQueue_flushBuffer
                     jlong pSrc = NEXT_LONG(b);
                     jlong pDst = NEXT_LONG(b);
 
+                    dstOps = (BMTLSDOps *)jlong_to_ptr(pDst);
                     if (mtlc != NULL) {
                         [mtlc.encoderManager endEncoder];
-                        MTLCommandBufferWrapper * cbwrapper = [mtlc pullCommandBufferWrapper];
-                        id<MTLCommandBuffer> commandbuf = [cbwrapper getCommandBuffer];
-                        [commandbuf addCompletedHandler:^(id <MTLCommandBuffer> commandbuf) {
-                            [cbwrapper release];
-                        }];
-                        [commandbuf commit];
                     }
                     mtlc = [MTLContext setSurfacesEnv:env src:pSrc dst:pDst];
-                    dstOps = (BMTLSDOps *)jlong_to_ptr(pDst);
                     break;
                 }
                 case sun_java2d_pipe_BufferedOpCodes_SET_SCRATCH_SURFACE:
@@ -612,12 +609,6 @@ Java_sun_java2d_metal_MTLRenderQueue_flushBuffer
                         } else {
                             if (mtlc != NULL) {
                                 [mtlc.encoderManager endEncoder];
-                                MTLCommandBufferWrapper * cbwrapper = [mtlc pullCommandBufferWrapper];
-                                id<MTLCommandBuffer> commandbuf = [cbwrapper getCommandBuffer];
-                                [commandbuf addCompletedHandler:^(id <MTLCommandBuffer> commandbuf) {
-                                    [cbwrapper release];
-                                }];
-                                [commandbuf commit];
                             }
                             mtlc = newMtlc;
                             dstOps = NULL;
@@ -656,13 +647,14 @@ Java_sun_java2d_metal_MTLRenderQueue_flushBuffer
                     CHECK_PREVIOUS_OP(MTL_OP_OTHER);
                     jlong pConfigInfo = NEXT_LONG(b);
                     CONTINUE_IF_NULL(mtlc);
+                    MTLGC_DestroyMTLGraphicsConfig(pConfigInfo);
 
+                    // the previous method will call glX/wglMakeCurrent(None),
+                    // so we should nullify the current mtlc and dstOps to avoid
+                    // calling glFlush() (or similar) while no context is current
                     if (mtlc != NULL) {
                         [mtlc.encoderManager endEncoder];
                     }
-
-                    MTLGC_DestroyMTLGraphicsConfig(pConfigInfo);
-
                     mtlc = NULL;
                  //   dstOps = NULL;
                     break;
@@ -673,23 +665,24 @@ Java_sun_java2d_metal_MTLRenderQueue_flushBuffer
                     // invalidate the references to the current context and
                     // destination surface that are maintained at the native level
                     if (mtlc != NULL) {
-                        commitEncodedCommands();
-                        RESET_PREVIOUS_OP();
-                        [mtlc reset];
+                        [mtlc.encoderManager endEncoder];
                     }
-
-                    MTLTR_FreeGlyphCaches();
-                    if (dstOps != NULL) {
-                        MTLSD_Delete(env, dstOps);
-                    }
-
                     mtlc = NULL;
-                    dstOps = NULL;
+                //    dstOps = NULL;
                     break;
                 }
                 case sun_java2d_pipe_BufferedOpCodes_SYNC:
                 {
                     CHECK_PREVIOUS_OP(MTL_OP_SYNC);
+                    break;
+                }
+
+                // multibuffering ops
+                case sun_java2d_pipe_BufferedOpCodes_SWAP_BUFFERS:
+                {
+                    CHECK_PREVIOUS_OP(MTL_OP_OTHER);
+                    jlong window = NEXT_LONG(b);
+                    MTLSD_SwapBuffers(env, window);
                     break;
                 }
 
@@ -954,3 +947,5 @@ void commitEncodedCommands() {
     [commandbuf commit];
     [commandbuf waitUntilCompleted];
 }
+
+#endif /* !HEADLESS */

@@ -23,6 +23,8 @@
  * questions.
  */
 
+#ifndef HEADLESS
+
 #include <jni.h>
 #include <jlong.h>
 
@@ -33,6 +35,7 @@
 #include "MTLUtils.h"
 #include "GraphicsPrimitiveMgr.h"
 
+#include <stdlib.h> // malloc
 #include <string.h> // memcpy
 #include "IntArgbPre.h"
 
@@ -161,8 +164,7 @@ replaceTextureRegion(MTLContext *mtlc, id<MTLTexture> dest, const SurfaceDataRas
     const int dw = dx2 - dx1;
     const int dh = dy2 - dy1;
     if (dw < sw || dh < sh) {
-        J2dTraceLn4(J2D_TRACE_ERROR, "replaceTextureRegion: dest size: (%d, %d) less than source size: (%d, %d)", dw, dh, sw, sh);
-        return;
+        J2dTraceLn4(J2D_TRACE_WARNING, "replaceTextureRegion: dest size: (%d, %d) less than source size: (%d, %d)", dw, dh, sw, sh);
     }
 
     const void *raster = srcInfo->rasBase;
@@ -194,9 +196,6 @@ replaceTextureRegion(MTLContext *mtlc, id<MTLTexture> dest, const SurfaceDataRas
             [computeEncoder setBuffer:swizzled offset:0 atIndex:1];
 
             NSUInteger threadGroupSize = computePipelineState.maxTotalThreadsPerThreadgroup;
-            if (threadGroupSize == 0) {
-               threadGroupSize = 1;
-            }
             NSUInteger pixelCount = buff.length / srcInfo->pixelStride;
             MTLSize threadsPerGroup = MTLSizeMake(threadGroupSize, 1, 1);
             MTLSize threadGroups = MTLSizeMake((pixelCount + threadGroupSize - 1) / threadGroupSize,
@@ -216,14 +215,6 @@ replaceTextureRegion(MTLContext *mtlc, id<MTLTexture> dest, const SurfaceDataRas
                           toTexture:dest
                    destinationSlice:0 destinationLevel:0 destinationOrigin:MTLOriginMake(dx1, dy1, 0)];
         [blitEncoder endEncoding];
-        [mtlc.encoderManager endEncoder];
-
-        MTLCommandBufferWrapper * cbwrapper = [mtlc pullCommandBufferWrapper];
-        id<MTLCommandBuffer> commandbuf = [cbwrapper getCommandBuffer];
-        [commandbuf addCompletedHandler:^(id <MTLCommandBuffer> commandbuf) {
-            [cbwrapper release];
-        }];
-        [commandbuf commit];
     }
 }
 
@@ -363,12 +354,6 @@ MTLBlitLoops_IsoBlit(JNIEnv *env,
     RETURN_IF_NULL(mtlc);
     RETURN_IF_NULL(srcOps);
     RETURN_IF_NULL(dstOps);
-    // Verify if we use a valid MTLContext
-    MTLSDOps *dstMTLOps = (MTLSDOps *)dstOps->privOps;
-    RETURN_IF_TRUE(dstMTLOps->configInfo != NULL && mtlc != dstMTLOps->configInfo->context);
-
-    MTLSDOps *srcMTLOps = (MTLSDOps *)srcOps->privOps;
-    RETURN_IF_TRUE(srcMTLOps->configInfo != NULL && mtlc != srcMTLOps->configInfo->context);
 
     id<MTLTexture> srcTex = srcOps->pTexture;
     id<MTLTexture> dstTex = dstOps->pTexture;
@@ -492,9 +477,6 @@ MTLBlitLoops_Blit(JNIEnv *env,
     RETURN_IF_NULL(mtlc);
     RETURN_IF_NULL(srcOps);
     RETURN_IF_NULL(dstOps);
-    // Verify if we use a valid MTLContext
-    MTLSDOps *dstMTLOps = (MTLSDOps *)dstOps->privOps;
-    RETURN_IF_TRUE(dstMTLOps->configInfo != NULL && mtlc != dstMTLOps->configInfo->context);
 
     id<MTLTexture> dest = dstOps->pTexture;
     if (dest == NULL) {
@@ -599,11 +581,11 @@ MTLBlitLoops_Blit(JNIEnv *env,
     SurfaceData_InvokeUnlock(env, srcOps, &srcInfo);
 }
 
-void copyFromMTLBuffer(void *pDst, id<MTLBuffer> srcBuf, NSUInteger offset, NSUInteger len, BOOL convertFromArgbPre) {
+void copyFromMTLBuffer(void *pDst, id<MTLBuffer> srcBuf, jint offset, jint len, BOOL convertFromArgbPre) {
     char *pSrc = (char*)srcBuf.contents + offset;
     if (convertFromArgbPre) {
-        NSUInteger pixelLen = len >> 2;
-        for (NSUInteger i = 0; i < pixelLen; i++) {
+        jint pixelLen = len>>2;
+        for (int i = 0; i < pixelLen; i++) {
             LoadIntArgbPreTo1IntArgb((jint*)pSrc, 0, i, ((jint*)pDst)[i]);
         }
     } else {
@@ -640,10 +622,6 @@ MTLBlitLoops_SurfaceToSwBlit(JNIEnv *env, MTLContext *mtlc,
     RETURN_IF_NULL(srcOps);
     RETURN_IF_NULL(dstOps);
     RETURN_IF_NULL(mtlc);
-    RETURN_IF_TRUE(width < 0);
-    RETURN_IF_TRUE(height < 0);
-    NSUInteger w = (NSUInteger)width;
-    NSUInteger h = (NSUInteger)height;
 
     srcInfo.bounds.x1 = srcx;
     srcInfo.bounds.y1 = srcy;
@@ -679,13 +657,13 @@ MTLBlitLoops_SurfaceToSwBlit(JNIEnv *env, MTLContext *mtlc,
             width = srcInfo.bounds.x2 - srcInfo.bounds.x1;
             height = srcInfo.bounds.y2 - srcInfo.bounds.y1;
 
-            pDst = PtrPixelsRow(pDst, dstx, dstInfo.pixelStride);
+            pDst = PtrAddBytes(pDst, dstx * dstInfo.pixelStride);
             pDst = PtrPixelsRow(pDst, dsty, dstInfo.scanStride);
 
             // Metal texture is (0,0) at left-top
             srcx = srcOps->xOffset + srcx;
             srcy = srcOps->yOffset + srcy;
-            NSUInteger byteLength = w * h * 4; // NOTE: assume that src format is MTLPixelFormatBGRA8Unorm
+            const int byteLength = width * height * 4; // NOTE: assume that src format is MTLPixelFormatBGRA8Unorm
 
             // Create MTLBuffer (or use static)
             id<MTLBuffer> mtlbuf;
@@ -712,7 +690,7 @@ MTLBlitLoops_SurfaceToSwBlit(JNIEnv *env, MTLContext *mtlc,
             }
             mtlbuf = mtlIntermediateBuffer;
 #else // USE_STATIC_BUFFER
-            mtlbuf = [mtlc.device newBufferWithLength:byteLength options:MTLResourceStorageModeShared];
+            mtlbuf = [mtlc.device newBufferWithLength:width*height*4 options:MTLResourceStorageModeShared];
 #endif // USE_STATIC_BUFFER
 
             // Read from surface into MTLBuffer
@@ -723,14 +701,15 @@ MTLBlitLoops_SurfaceToSwBlit(JNIEnv *env, MTLContext *mtlc,
 
             id<MTLCommandBuffer> cb = [mtlc createCommandBuffer];
             id<MTLBlitCommandEncoder> blitEncoder = [cb blitCommandEncoder];
+            [blitEncoder synchronizeTexture:srcOps->pTexture slice:0 level:0];
             [blitEncoder copyFromTexture:srcOps->pTexture
                             sourceSlice:0
                             sourceLevel:0
                            sourceOrigin:MTLOriginMake(srcx, srcy, 0)
-                             sourceSize:MTLSizeMake(w, h, 1)
+                             sourceSize:MTLSizeMake(width, height, 1)
                                toBuffer:mtlbuf
-                      destinationOffset:0 /*offset already taken in: pDst = PtrPixelsRow(pDst, dstx,  dstInfo.pixelStride)*/
-                 destinationBytesPerRow:w*4
+                      destinationOffset:0 /*offset already taken in: pDst = PtrAddBytes(pDst, dstx * dstInfo.pixelStride)*/
+                 destinationBytesPerRow:width*4
                destinationBytesPerImage:byteLength];
             [blitEncoder endEncoding];
 
@@ -741,7 +720,7 @@ MTLBlitLoops_SurfaceToSwBlit(JNIEnv *env, MTLContext *mtlc,
             // Perform conversion if necessary
             BOOL convertFromPre = !RasterFormatInfos[dsttype].isPremult && !srcOps->isOpaque;
 
-            if ((dstInfo.scanStride == w * dstInfo.pixelStride) &&
+            if ((dstInfo.scanStride == width * dstInfo.pixelStride) &&
                 (height == (dstInfo.bounds.y2 - dstInfo.bounds.y1))) {
                 // mtlbuf.contents have same dimensions as of pDst
                 copyFromMTLBuffer(pDst, mtlbuf, 0, byteLength, convertFromPre);
@@ -750,7 +729,7 @@ MTLBlitLoops_SurfaceToSwBlit(JNIEnv *env, MTLContext *mtlc,
                 // copy each row from mtlbuf.contents at appropriate position in pDst
                 // Note : pDst is already addjusted for offsets using PtrAddBytes above
 
-                NSUInteger rowSize = w * dstInfo.pixelStride;
+                int rowSize = width * dstInfo.pixelStride;
                 for (int y = 0; y < height; y++) {
                     copyFromMTLBuffer(pDst, mtlbuf, y * rowSize, rowSize, convertFromPre);
                     pDst = PtrAddBytes(pDst, dstInfo.scanStride);
@@ -776,69 +755,29 @@ MTLBlitLoops_CopyArea(JNIEnv *env,
     J2dTraceImpl(J2D_TRACE_VERBOSE, JNI_TRUE, "MTLBlitLoops_CopyArea: bdst=%p [tex=%p] %dx%d | src (%d, %d), %dx%d -> dst (%d, %d)",
             dstOps, dstOps->pTexture, ((id<MTLTexture>)dstOps->pTexture).width, ((id<MTLTexture>)dstOps->pTexture).height, x, y, width, height, dx, dy);
 #endif //DEBUG
-    jint texWidth = ((id<MTLTexture>)dstOps->pTexture).width;
-    jint texHeight = ((id<MTLTexture>)dstOps->pTexture).height;
 
-    SurfaceDataBounds srcBounds, dstBounds;
-    srcBounds.x1 = x;
-    srcBounds.y1 = y;
-    srcBounds.x2 = srcBounds.x1 + width;
-    srcBounds.y2 = srcBounds.y1 + height;
-    dstBounds.x1 = x + dx;
-    dstBounds.y1 = y + dy;
-    dstBounds.x2 = dstBounds.x1 + width;
-    dstBounds.y2 = dstBounds.y1 + height;
+    @autoreleasepool {
+        id<MTLCommandBuffer> cb = [mtlc createCommandBuffer];
+        id<MTLBlitCommandEncoder> blitEncoder = [cb blitCommandEncoder];
 
-    SurfaceData_IntersectBoundsXYXY(&srcBounds, 0, 0, texWidth, texHeight);
-    SurfaceData_IntersectBoundsXYXY(&dstBounds, 0, 0, texWidth, texHeight);
-    SurfaceData_IntersectBlitBounds(&dstBounds, &srcBounds, -dx, -dy);
+        // Create an intrermediate buffer
+        int totalBuffsize = width * height * 4;
+        id <MTLBuffer> buff = [[mtlc.device newBufferWithLength:totalBuffsize options:MTLResourceStorageModePrivate] autorelease];
 
-    int srcWidth = (srcBounds.x2 - srcBounds.x1);
-    int srcHeight = (srcBounds.y2 - srcBounds.y1);
+        [blitEncoder copyFromTexture:dstOps->pTexture
+                sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(x, y, 0) sourceSize:MTLSizeMake(width, height, 1)
+                 toBuffer:buff destinationOffset:0 destinationBytesPerRow:(width * 4) destinationBytesPerImage:totalBuffsize];
 
-   if ((srcBounds.x1 < srcBounds.x2 && srcBounds.y1 < srcBounds.y2) &&
-       (dstBounds.x1 < dstBounds.x2 && dstBounds.y1 < dstBounds.y2))
-   {
-        @autoreleasepool {
-            struct TxtVertex quadTxVerticesBuffer[6];
-            MTLPooledTextureHandle * interHandle =
-                [mtlc.texturePool getTexture:texWidth
-                                      height:texHeight
-                                      format:MTLPixelFormatBGRA8Unorm];
-            if (interHandle == nil) {
-                J2dTraceLn(J2D_TRACE_ERROR,
-                    "MTLBlitLoops_CopyArea: texture handle is null");
-                return;
-            }
-            [[mtlc getCommandBufferWrapper] registerPooledTexture:interHandle];
+        [blitEncoder copyFromBuffer:buff
+                sourceOffset:0 sourceBytesPerRow:width*4 sourceBytesPerImage:totalBuffsize sourceSize:MTLSizeMake(width, height, 1)
+                toTexture:dstOps->pTexture destinationSlice:0 destinationLevel:0 destinationOrigin:MTLOriginMake(x + dx, y + dy, 0)];
+        [blitEncoder endEncoding];
 
-            id<MTLTexture> interTexture = interHandle.texture;
+        [cb commit];
+    }
 
-            /*
-             * We need to consider common states like clipping while
-             * performing copyArea, thats why we use drawTex2Tex and
-             * get encoder with appropriate state from EncoderManager
-             * and not directly use MTLBlitCommandEncoder for texture copy.
-             */
-
-            // copy content to intermediate texture
-            drawTex2Tex(mtlc, dstOps->pTexture, interTexture, dstOps->isOpaque,
-                        JNI_FALSE, INTERPOLATION_NEAREST_NEIGHBOR,
-                        0, 0, texWidth, texHeight, 0, 0, texWidth, texHeight);
-
-            // copy content with appropriate bounds to destination texture
-            drawTex2Tex(mtlc, interTexture, dstOps->pTexture, JNI_FALSE,
-                        dstOps->isOpaque, INTERPOLATION_NEAREST_NEIGHBOR,
-                        srcBounds.x1, srcBounds.y1, srcBounds.x2, srcBounds.y2,
-                        dstBounds.x1, dstBounds.y1, dstBounds.x2, dstBounds.y2);
-            [mtlc.encoderManager endEncoder];
-            MTLCommandBufferWrapper * cbwrapper =
-                [mtlc pullCommandBufferWrapper];
-            id<MTLCommandBuffer> commandbuf = [cbwrapper getCommandBuffer];
-            [commandbuf addCompletedHandler:^(id <MTLCommandBuffer> commandbuf) {
-                [cbwrapper release];
-            }];
-            [commandbuf commit];
-        }
-   }
+    // TODO:
+    //  1. check rect bounds
 }
+
+#endif /* !HEADLESS */

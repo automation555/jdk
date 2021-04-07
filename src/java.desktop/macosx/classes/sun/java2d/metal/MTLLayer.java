@@ -42,7 +42,7 @@ public class MTLLayer extends CFRetainedResource {
 
     // Pass the insets to native code to make adjustments in blitTexture
     private static native void nativeSetInsets(long layerPtr, int top, int left);
-    private static native void validate(long layerPtr, MTLSurfaceData mtlsd);
+    private static native void validate(long layerPtr, MTLSurfaceData cglsd);
     private static native void blitTexture(long layerPtr);
 
     private LWWindowPeer peer;
@@ -92,10 +92,8 @@ public class MTLLayer extends CFRetainedResource {
         MTLGraphicsConfig gc = (MTLGraphicsConfig)getGraphicsConfiguration();
         surfaceData = gc.createSurfaceData(this);
         setScale(gc.getDevice().getScaleFactor());
-        if (peer != null) {
-            Insets insets = peer.getInsets();
-            execute(ptr -> nativeSetInsets(ptr, insets.top, insets.left));
-        }
+        Insets insets = peer.getInsets();
+        execute(ptr -> nativeSetInsets(ptr, insets.top, insets.left));
         // the layer holds a reference to the buffer, which in
         // turn has a reference back to this layer
         if (surfaceData instanceof MTLSurfaceData) {
@@ -109,11 +107,11 @@ public class MTLLayer extends CFRetainedResource {
         return surfaceData;
     }
 
-    public void validate(final MTLSurfaceData mtlsd) {
+    public void validate(final MTLSurfaceData cglsd) {
         MTLRenderQueue rq = MTLRenderQueue.getInstance();
         rq.lock();
         try {
-            execute(ptr -> validate(ptr, mtlsd));
+            execute(ptr -> validate(ptr, cglsd));
         } finally {
             rq.unlock();
         }

@@ -44,7 +44,7 @@
  *  for example destination, stencil, or any other property of MTLRenderPassDescriptor)
  *  2. Updates 'mutable' properties encoder: pipelineState (with corresponding buffers), clip, transform, e.t.c. To avoid
  *  unnecessary calls of [encoder setXXX] this manager compares requested state with cached one.
- */
+ * */
 @interface EncoderManager : NSObject
 - (id _Nonnull)init;
 - (void)dealloc;
@@ -59,18 +59,12 @@
 - (id<MTLRenderCommandEncoder> _Nonnull)getRenderEncoder:(id<MTLTexture> _Nonnull)dest
                                              isDstOpaque:(bool)isOpaque;
 
-- (id<MTLRenderCommandEncoder> _Nonnull)getAAShaderRenderEncoder:(const BMTLSDOps * _Nonnull)dstOps;
-
 // returns encoder that renders/fills geometry with current composite and with given texture
 // (user must call [encoder setFragmentTexture] before any rendering)
 - (id<MTLRenderCommandEncoder> _Nonnull)getTextureEncoder:(const BMTLSDOps * _Nonnull)dstOps
                                       isSrcOpaque:(bool)isSrcOpaque;
 
 - (id<MTLRenderCommandEncoder> _Nonnull) getTextureEncoder:(id<MTLTexture> _Nonnull)dest
-                                               isSrcOpaque:(bool)isSrcOpaque
-                                               isDstOpaque:(bool)isDstOpaque;
-
-- (id<MTLRenderCommandEncoder> _Nonnull) getLCDEncoder:(id<MTLTexture> _Nonnull)dest
                                                isSrcOpaque:(bool)isSrcOpaque
                                                isDstOpaque:(bool)isDstOpaque;
 
