@@ -102,6 +102,27 @@ public final class UUID implements java.io.Serializable, Comparable<UUID> {
         static final SecureRandom numberGenerator = new SecureRandom();
     }
 
+    /*
+     * The MD5 digest used by this class to create type 3 (name based) UUIDs.
+     * In a holder class to defer initialization until needed.
+     */
+    private static final class Md5Digest {
+        private static final ThreadLocal<MessageDigest> MD5_DIGEST = ThreadLocal.withInitial(() -> {
+            try {
+                return MessageDigest.getInstance("MD5");
+            } catch (NoSuchAlgorithmException e) {
+                return null;
+            }
+        });
+
+        static MessageDigest orThrow() {
+            final MessageDigest digest;
+            if ((digest = MD5_DIGEST.get()) == null) throw new InternalError("MD5 not supported");
+
+            return digest;
+        }
+    }
+
     // Constructors and Factories
 
     /*
@@ -166,13 +187,7 @@ public final class UUID implements java.io.Serializable, Comparable<UUID> {
      * @return  A {@code UUID} generated from the specified array
      */
     public static UUID nameUUIDFromBytes(byte[] name) {
-        MessageDigest md;
-        try {
-            md = MessageDigest.getInstance("MD5");
-        } catch (NoSuchAlgorithmException nsae) {
-            throw new InternalError("MD5 not supported", nsae);
-        }
-        byte[] md5Bytes = md.digest(name);
+        byte[] md5Bytes = Md5Digest.orThrow().digest(name);
         md5Bytes[6]  &= 0x0f;  /* clear version        */
         md5Bytes[6]  |= 0x30;  /* set to version 3     */
         md5Bytes[8]  &= 0x3f;  /* clear variant        */
