@@ -160,7 +160,7 @@ void ShenandoahEvacuateUpdateRootsClosure::do_oop_work(T* p, Thread* t) {
       if (resolved == obj) {
         resolved = _heap->evacuate_object(obj, t);
       }
-      _heap->cas_oop(resolved, p, o);
+      ShenandoahHeap::atomic_update_oop(resolved, p, o);
     }
   }
 }
@@ -206,7 +206,7 @@ void ShenandoahCleanUpdateWeakOopsClosure<CONCURRENT, IsAlive, KeepAlive>::do_oo
       _keep_alive->do_oop(p);
     } else {
       if (CONCURRENT) {
-        Atomic::cmpxchg(p, obj, oop());
+        ShenandoahHeap::atomic_clear_oop(p, obj);
       } else {
         RawAccess<IS_NOT_NULL>::oop_store(p, oop());
       }
@@ -231,6 +231,13 @@ void ShenandoahCodeBlobAndDisarmClosure::do_code_blob(CodeBlob* cb) {
     CodeBlobToOopClosure::do_code_blob(cb);
     _bs->disarm(nm);
   }
+}
+
+ShenandoahRendezvousClosure::ShenandoahRendezvousClosure() :
+  HandshakeClosure("ShenandoahRendezvous") {
+}
+
+void ShenandoahRendezvousClosure::do_thread(Thread* thread) {
 }
 
 #ifdef ASSERT
