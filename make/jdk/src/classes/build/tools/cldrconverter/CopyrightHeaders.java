@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2016, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -26,6 +26,7 @@
 package build.tools.cldrconverter;
 
 import java.util.Calendar;
+import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.Locale;
 import java.util.TimeZone;
@@ -41,13 +42,14 @@ class CopyrightHeaders {
         " * Copyright (c) 2012, %d, Oracle and/or its affiliates. All rights reserved.\n" +
         " */\n";
 
-    // Last updated:  - 1/04/2021
+    // Last updated:  - 6/06/2016, 1:42:31 PM
     private static final String UNICODE =
         "/*\n" +
         " * COPYRIGHT AND PERMISSION NOTICE\n" +
         " *\n" +
-        " * Copyright (c) 1991-2020 Unicode, Inc. All rights reserved.\n" +
-        " * Distributed under the Terms of Use in https://www.unicode.org/copyright.html.\n" +
+        " * Copyright (C) 1991-2016 Unicode, Inc. All rights reserved.\n" +
+        " * Distributed under the Terms of Use in \n" +
+        " * http://www.unicode.org/copyright.html.\n" +
         " *\n" +
         " * Permission is hereby granted, free of charge, to any person obtaining\n" +
         " * a copy of the Unicode data files and any associated documentation\n" +
@@ -56,11 +58,14 @@ class CopyrightHeaders {
         " * without restriction, including without limitation the rights to use,\n" +
         " * copy, modify, merge, publish, distribute, and/or sell copies of\n" +
         " * the Data Files or Software, and to permit persons to whom the Data Files\n" +
-        " * or Software are furnished to do so, provided that either\n" +
-        " * (a) this copyright and permission notice appear with all copies\n" +
-        " * of the Data Files or Software, or\n" +
-        " * (b) this copyright and permission notice appear in associated\n" +
-        " * Documentation.\n" +
+        " * or Software are furnished to do so, provided that\n" +
+        " * (a) this copyright and permission notice appear with all copies \n" +
+        " * of the Data Files or Software,\n" +
+        " * (b) this copyright and permission notice appear in associated \n" +
+        " * documentation, and\n" +
+        " * (c) there is clear notice in each modified Data File or in the Software\n" +
+        " * as well as in the documentation associated with the Data File(s) or\n" +
+        " * Software that the data or software has been modified.\n" +
         " *\n" +
         " * THE DATA FILES AND SOFTWARE ARE PROVIDED \"AS IS\", WITHOUT WARRANTY OF\n" +
         " * ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE\n" +
@@ -146,8 +151,14 @@ class CopyrightHeaders {
     }
 
     private static int getYear() {
-        return new GregorianCalendar(TimeZone.getTimeZone("America/Los_Angeles"),
-                                         Locale.US).get(Calendar.YEAR);
+        Date date = new Date();
+        if (System.getenv("SOURCE_DATE_EPOCH") != null) {
+            date = new Date(1000 * Long.valueOf(System.getenv("SOURCE_DATE_EPOCH")));
+        }
+
+        GregorianCalendar calendar = new GregorianCalendar(TimeZone.getTimeZone("America/Los_Angeles"), Locale.US);
+        calendar.setTime(date);
+        return calendar.get(Calendar.YEAR);
     }
 
     // no instantiation
