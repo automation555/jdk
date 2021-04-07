@@ -341,9 +341,9 @@ ping4(JNIEnv *env, jint fd, SOCKETADDRESS *sa, SOCKETADDRESS *netif,
     struct icmp *icmp;
     struct ip *ip;
     struct sockaddr_in sa_recv;
-    jchar pid;
+    pid_t pid;
     struct timeval tv;
-    size_t plen = ICMP_ADVLENMIN + sizeof(tv);
+    size_t plen = ICMP_ADVLENMIN + sizeof(tv) + sizeof(pid_t);
 
     setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
 
@@ -361,9 +361,9 @@ ping4(JNIEnv *env, jint fd, SOCKETADDRESS *sa, SOCKETADDRESS *netif,
             return JNI_FALSE;
         }
     }
+    //we don't need to cast this down, as it will be put into the icmp_data member
+    pid = htonl(getpid());
 
-    // icmp_id is a 16 bit data type, therefore down cast the pid
-    pid = (jchar)getpid();
 
     // Make the socket non blocking so we can use select
     SET_NONBLOCKING(fd);
@@ -372,12 +372,15 @@ ping4(JNIEnv *env, jint fd, SOCKETADDRESS *sa, SOCKETADDRESS *netif,
         icmp = (struct icmp *)sendbuf;
         icmp->icmp_type = ICMP_ECHO;
         icmp->icmp_code = 0;
-        // let's tag the ECHO packet with our pid so we can identify it
-        icmp->icmp_id = htons(pid);
+        // same result as downcasting the little-endian pid, although we are not longer
+        // relying on this value to identify echo replies.
+        icmp->icmp_id = pid >> 16;
         icmp->icmp_seq = htons(seq);
         seq++;
         gettimeofday(&tv, NULL);
         memcpy(icmp->icmp_data, &tv, sizeof(tv));
+        //copy our pid into icmp_data so we can uniquely identify the echo response
+        memcpy(icmp->icmp_data + sizeof(tv), &pid, sizeof(pid_t));
         icmp->icmp_cksum = 0;
         // manually calculate checksum
         icmp->icmp_cksum = in_cksum((u_short *)icmp, plen);
@@ -420,10 +423,11 @@ ping4(JNIEnv *env, jint fd, SOCKETADDRESS *sa, SOCKETADDRESS *netif,
                 }
                 icmp = (struct icmp *)(recvbuf + hlen);
                 // We did receive something, but is it what we were expecting?
-                // I.E.: An ICMP_ECHO_REPLY packet with the proper PID and
+                // I.E.: An ICMP_ECHO_REPLY packet with the proper timestamp and PID
                 //       from the host that we are trying to determine is reachable.
                 if (icmp->icmp_type == ICMP_ECHOREPLY &&
-                    (ntohs(icmp->icmp_id) == pid))
+                (memcmp(icmp->icmp_data, &tv, sizeof(tv)) == 0) &&
+                (*(pid_t *)(icmp->icmp_data + sizeof(tv)) == pid))
                 {
                     if (sa->sa4.sin_addr.s_addr == sa_recv.sin_addr.s_addr) {
                         close(fd);
@@ -486,13 +490,21 @@ Java_java_net_Inet4AddressImpl_isReachable0(JNIEnv *env, jobject this,
         netif = &inf;
     }
 
-    // Let's try to create a RAW socket to send ICMP packets.
-    // This usually requires "root" privileges, so it's likely to fail.
-    fd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
-    if (fd == -1) {
+/*
+    First we see if the OS supports ICMP as a protocol.
+    In the event that this is an older kernel without IPPROTO_ICMP
+    or that the net.ipv4.ping_group_range kernel parameter is not
+    set, then we fall back to trying to create a RAW socket to
+    send ICMP packets.
+    This usually requires "root" privileges, so it's likely to fail.
+    If all else fails, fall back to TCP and implement tcp echo
+*/
+    fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP);
+    if (fd == -1)
+        fd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+    if (fd == -1)
         return tcp_ping4(env, &sa, netif, timeout, ttl);
-    } else {
-        // It didn't fail, so we can use ICMP_ECHO requests.
+    else
         return ping4(env, fd, &sa, netif, timeout, ttl);
-    }
+
 }

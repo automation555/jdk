@@ -544,9 +544,9 @@ ping6(JNIEnv *env, jint fd, SOCKETADDRESS *sa, SOCKETADDRESS *netif,
     unsigned char sendbuf[1500], recvbuf[1500];
     struct icmp6_hdr *icmp6;
     struct sockaddr_in6 sa_recv;
-    jchar pid;
+    pid_t pid;
     struct timeval tv;
-    size_t plen = sizeof(struct icmp6_hdr) + sizeof(tv);
+    size_t plen = sizeof(struct icmp6_hdr) + sizeof(tv) + sizeof(pid_t);
 
 #if defined(__linux__)
     /**
@@ -574,8 +574,8 @@ ping6(JNIEnv *env, jint fd, SOCKETADDRESS *sa, SOCKETADDRESS *netif,
         }
     }
 
-    // icmp_id is a 16 bit data type, therefore down cast the pid
-    pid = (jchar)getpid();
+    //we don't need to cast this down, as it will be put into the icmp_data member
+    pid = htonl(getpid());
 
     // Make the socket non blocking so we can use select
     SET_NONBLOCKING(fd);
@@ -584,12 +584,16 @@ ping6(JNIEnv *env, jint fd, SOCKETADDRESS *sa, SOCKETADDRESS *netif,
         icmp6 = (struct icmp6_hdr *)sendbuf;
         icmp6->icmp6_type = ICMP6_ECHO_REQUEST;
         icmp6->icmp6_code = 0;
-        // let's tag the ECHO packet with our pid so we can identify it
-        icmp6->icmp6_id = htons(pid);
+        // same result as downcasting the little-endian pid, although we are not longer
+        // relying on this value to identify echo replies.
+        icmp6->icmp6_id = pid >> 16;
         icmp6->icmp6_seq = htons(seq);
         seq++;
         gettimeofday(&tv, NULL);
         memcpy(sendbuf + sizeof(struct icmp6_hdr), &tv, sizeof(tv));
+        //copy our pid into icmp_data so we can uniquely identify the echo response
+        memcpy(sendbuf + sizeof(struct icmp6_hdr) + sizeof(tv), &pid, sizeof(pid_t));
+
         icmp6->icmp6_cksum = 0;
         // send it
         n = sendto(fd, sendbuf, plen, 0, &sa->sa, sizeof(struct sockaddr_in6));
@@ -626,8 +630,10 @@ ping6(JNIEnv *env, jint fd, SOCKETADDRESS *sa, SOCKETADDRESS *netif,
                 // We did receive something, but is it what we were expecting?
                 // I.E.: An ICMP6_ECHO_REPLY packet with the proper PID and
                 //       from the host that we are trying to determine is reachable.
+
                 if (icmp6->icmp6_type == ICMP6_ECHO_REPLY &&
-                    (ntohs(icmp6->icmp6_id) == pid))
+                (memcmp(recvbuf + sizeof(struct icmp6_hdr), &tv, sizeof(tv)) == 0) &&
+                (*(pid_t *)(recvbuf + sizeof(struct icmp6_hdr) + sizeof(tv)) == pid))
                 {
                     if (NET_IsEqual((jbyte *)&sa->sa6.sin6_addr,
                                     (jbyte *)&sa_recv.sin6_addr)) {
@@ -697,13 +703,19 @@ Java_java_net_Inet6AddressImpl_isReachable0(JNIEnv *env, jobject this,
         netif = &inf;
     }
 
-    // Let's try to create a RAW socket to send ICMP packets.
-    // This usually requires "root" privileges, so it's likely to fail.
-    fd = socket(AF_INET6, SOCK_RAW, IPPROTO_ICMPV6);
-    if (fd == -1) {
+/*
+    First we see if the OS supports ICMP as a protocol.
+    In the event that this is an older kernel without
+    IPPROTO_ICMPV6, then we fall back to trying to create
+    a RAW socket to send ICMP packets.
+    This usually requires "root" privileges, so it's likely to fail.
+    If all else fails, fall back to TCP and implement tcp echo
+*/
+    fd = socket(AF_INET6, SOCK_DGRAM, IPPROTO_ICMPV6);
+    if (fd == -1)
+        fd = socket(AF_INET6, SOCK_RAW, IPPROTO_ICMPV6);
+    if (fd == -1)
         return tcp_ping6(env, &sa, netif, timeout, ttl);
-    } else {
-        // It didn't fail, so we can use ICMP_ECHO requests.
+    else
         return ping6(env, fd, &sa, netif, timeout, ttl);
-    }
 }
