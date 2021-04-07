@@ -1063,10 +1063,10 @@ public class Types {
      * Is t a subtype of s?<br>
      * (not defined for Method and ForAll types)
      */
-    public final boolean isSubtype(Type t, Type s) {
+    final public boolean isSubtype(Type t, Type s) {
         return isSubtype(t, s, true);
     }
-    public final boolean isSubtypeNoCapture(Type t, Type s) {
+    final public boolean isSubtypeNoCapture(Type t, Type s) {
         return isSubtype(t, s, false);
     }
     public boolean isSubtype(Type t, Type s, boolean capture) {
@@ -2489,12 +2489,14 @@ public class Types {
             bounds = bounds.prepend(syms.objectType);
         }
         ClassSymbol bc =
-            new ClassSymbol(ABSTRACT|PUBLIC|SYNTHETIC|COMPOUND|ACYCLIC,
+            new ClassSymbol(ABSTRACT|PUBLIC|SYNTHETIC,
                             Type.moreInfo
                                 ? names.fromString(bounds.toString())
                                 : names.empty,
                             null,
                             syms.noSymbol);
+        bc.setFlag(TypeSymbolFlags.COMPOUND);
+        bc.setFlag(TypeSymbolFlags.ACYCLIC);
         IntersectionClassType intersectionType = new IntersectionClassType(bounds, bc, allInterfaces);
         bc.type = intersectionType;
         bc.erasure_field = (bounds.head.hasTag(TYPEVAR)) ?
@@ -4076,13 +4078,17 @@ public class Types {
             return buf.toList();
         }
 
-        private Type arraySuperType;
+        private Type arraySuperType = null;
         private Type arraySuperType() {
             // initialized lazily to avoid problems during compiler startup
             if (arraySuperType == null) {
-                // JLS 10.8: all arrays implement Cloneable and Serializable.
-                arraySuperType = makeIntersectionType(List.of(syms.serializableType,
-                        syms.cloneableType), true);
+                synchronized (this) {
+                    if (arraySuperType == null) {
+                        // JLS 10.8: all arrays implement Cloneable and Serializable.
+                        arraySuperType = makeIntersectionType(List.of(syms.serializableType,
+                                syms.cloneableType), true);
+                    }
+                }
             }
             return arraySuperType;
         }
@@ -4895,7 +4901,7 @@ public class Types {
      * Void if a second argument is not needed.
      */
     public static abstract class DefaultTypeVisitor<R,S> implements Type.Visitor<R,S> {
-        public final R visit(Type t, S s)               { return t.accept(this, s); }
+        final public R visit(Type t, S s)               { return t.accept(this, s); }
         public R visitClassType(ClassType t, S s)       { return visitType(t, s); }
         public R visitWildcardType(WildcardType t, S s) { return visitType(t, s); }
         public R visitArrayType(ArrayType t, S s)       { return visitType(t, s); }
@@ -4922,7 +4928,7 @@ public class Types {
      * Void if a second argument is not needed.
      */
     public static abstract class DefaultSymbolVisitor<R,S> implements Symbol.Visitor<R,S> {
-        public final R visit(Symbol s, S arg)                   { return s.accept(this, arg); }
+        final public R visit(Symbol s, S arg)                   { return s.accept(this, arg); }
         public R visitClassSymbol(ClassSymbol s, S arg)         { return visitSymbol(s, arg); }
         public R visitMethodSymbol(MethodSymbol s, S arg)       { return visitSymbol(s, arg); }
         public R visitOperatorSymbol(OperatorSymbol s, S arg)   { return visitSymbol(s, arg); }
@@ -4975,7 +4981,7 @@ public class Types {
      * visitor; use Void if no return type is needed.
      */
     public static abstract class UnaryVisitor<R> extends SimpleVisitor<R,Void> {
-        public final R visit(Type t) { return t.accept(this, null); }
+        final public R visit(Type t) { return t.accept(this, null); }
     }
 
     /**
@@ -4989,7 +4995,7 @@ public class Types {
      * not needed.
      */
     public static class MapVisitor<S> extends DefaultTypeVisitor<Type,S> {
-        public final Type visit(Type t) { return t.accept(this, null); }
+        final public Type visit(Type t) { return t.accept(this, null); }
         public Type visitType(Type t, S s) { return t; }
     }
 

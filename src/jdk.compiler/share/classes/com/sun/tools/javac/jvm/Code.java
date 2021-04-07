@@ -26,6 +26,7 @@
 package com.sun.tools.javac.jvm;
 
 import com.sun.tools.javac.code.*;
+import com.sun.tools.javac.code.Flags.MethodSymbolFlags;
 import com.sun.tools.javac.code.Symbol.*;
 import com.sun.tools.javac.resources.CompilerProperties.Errors;
 import com.sun.tools.javac.util.*;
@@ -2186,7 +2187,7 @@ public class Code {
         if (!keepLocalVariables) return;
         //don't keep synthetic vars, unless they are lambda method parameters
         boolean ignoredSyntheticVar = (var.sym.flags() & Flags.SYNTHETIC) != 0 &&
-                ((var.sym.owner.flags() & Flags.LAMBDA_METHOD) == 0 ||
+                (!var.sym.owner.isFlagSet(MethodSymbolFlags.LAMBDA_METHOD) ||
                  (var.sym.flags() & Flags.PARAMETER) == 0);
         if (ignoredSyntheticVar) return;
         if (varBuffer == null)
@@ -2243,7 +2244,7 @@ public class Code {
     }
 
     private static class Mneumonics {
-        private static final String[] mnem = new String[ByteCodeCount];
+        private final static String[] mnem = new String[ByteCodeCount];
         static {
             mnem[nop] = "nop";
             mnem[aconst_null] = "aconst_null";

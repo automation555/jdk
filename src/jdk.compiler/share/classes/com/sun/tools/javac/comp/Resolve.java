@@ -2629,15 +2629,6 @@ public class Resolve {
         }
     };
 
-    LogResolveHelper silentLogResolveHelper = new LogResolveHelper() {
-        public boolean resolveDiagnosticNeeded(Type site, List<Type> argtypes, List<Type> typeargtypes) {
-            return false;
-        }
-        public List<Type> getArgumentTypes(ResolveError errSym, Symbol accessedSym, Name name, List<Type> argtypes) {
-            return argtypes;
-        }
-    };
-
     LogResolveHelper methodLogResolveHelper = new LogResolveHelper() {
         public boolean resolveDiagnosticNeeded(Type site, List<Type> argtypes, List<Type> typeargtypes) {
             return !site.isErroneous() &&
@@ -2757,7 +2748,7 @@ public class Resolve {
                     sym = super.access(env, pos, location, sym);
                 } else {
                     MethodSymbol msym = (MethodSymbol)sym;
-                    if ((msym.flags() & SIGNATURE_POLYMORPHIC) != 0) {
+                    if (msym.isFlagSet(MethodSymbolFlags.SIGNATURE_POLYMORPHIC)) {
                         env.info.pendingResolutionPhase = BASIC;
                         return findPolymorphicSignatureInstance(env, sym, argtypes);
                     }
@@ -2808,14 +2799,15 @@ public class Resolve {
         // Create the desired method
         // Retain static modifier is to support invocations to
         // MethodHandle.linkTo* methods
-        long flags = ABSTRACT | HYPOTHETICAL |
+        long flags = ABSTRACT |
                      spMethod.flags() & (Flags.AccessFlags | Flags.STATIC);
-        Symbol msym = new MethodSymbol(flags, spMethod.name, mtype, spMethod.owner) {
+        MethodSymbol msym = new MethodSymbol(flags, spMethod.name, mtype, spMethod.owner) {
             @Override
             public Symbol baseSymbol() {
                 return spMethod;
             }
         };
+        msym.setFlag(MethodSymbolFlags.HYPOTHETICAL);
         if (!mtype.isErroneous()) { // Cache only if kosher.
             polymorphicSignatureScope.enter(msym);
         }
@@ -3134,7 +3126,7 @@ public class Resolve {
         if (!res.fst.kind.isResolutionError()) {
             //handle sigpoly method references
             MethodSymbol msym = (MethodSymbol)res.fst;
-            if ((msym.flags() & SIGNATURE_POLYMORPHIC) != 0) {
+            if (msym.isFlagSet(MethodSymbolFlags.SIGNATURE_POLYMORPHIC)) {
                 env.info.pendingResolutionPhase = BASIC;
                 res = new Pair<>(findPolymorphicSignatureInstance(msym, descriptor), res.snd);
             }
@@ -3782,7 +3774,7 @@ public class Resolve {
         for (Type t1 : types.interfaces(t)) {
             boolean shouldAdd = true;
             for (Type t2 : types.directSupertypes(t)) {
-                if (t1 != t2 && !t2.hasTag(ERROR) && types.isSubtypeNoCapture(t2, t1)) {
+                if (t1 != t2 && types.isSubtypeNoCapture(t2, t1)) {
                     shouldAdd = false;
                 }
             }

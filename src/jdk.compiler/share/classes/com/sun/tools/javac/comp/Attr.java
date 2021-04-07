@@ -805,7 +805,7 @@ public class Attr extends JCTree.Visitor {
     void attribTypeVariables(List<JCTypeParameter> typarams, Env<AttrContext> env, boolean checkCyclic) {
         for (JCTypeParameter tvar : typarams) {
             TypeVar a = (TypeVar)tvar.type;
-            a.tsym.flags_field |= UNATTRIBUTED;
+            a.tsym.setFlag(TypeSymbolFlags.UNATTRIBUTED);
             a.setUpperBound(Type.noType);
             if (!tvar.bounds.isEmpty()) {
                 List<Type> bounds = List.of(attribType(tvar.bounds.head, env));
@@ -817,7 +817,7 @@ public class Attr extends JCTree.Visitor {
                 // java.lang.Object.
                 types.setBounds(a, List.of(syms.objectType));
             }
-            a.tsym.flags_field &= ~UNATTRIBUTED;
+            a.tsym.clearFlag(TypeSymbolFlags.UNATTRIBUTED);
         }
         if (checkCyclic) {
             for (JCTypeParameter tvar : typarams) {
@@ -969,7 +969,7 @@ public class Attr extends JCTree.Visitor {
                 // (This would be an illegal access to "this before super").
                 if (env.info.isSelfCall &&
                         env.tree.hasTag(NEWCLASS)) {
-                    c.flags_field |= NOOUTERTHIS;
+                    c.setFlag(TypeSymbolFlags.NOOUTERTHIS);
                 }
                 attribClass(tree.pos(), c);
                 result = tree.type = c.type;
@@ -1650,7 +1650,6 @@ public class Attr extends JCTree.Visitor {
         try {
             boolean enumSwitch = (seltype.tsym.flags() & Flags.ENUM) != 0;
             boolean stringSwitch = types.isSameType(seltype, syms.stringType);
-            boolean errorEnumSwitch = TreeInfo.isErrorEnumSwitch(selector, cases);
             if (!enumSwitch && !stringSwitch)
                 seltype = chk.checkType(selector.pos(), seltype, syms.intType);
 
@@ -1680,17 +1679,6 @@ public class Attr extends JCTree.Visitor {
                                 log.error(pat.pos(), Errors.EnumLabelMustBeUnqualifiedEnum);
                             } else if (!labels.add(sym)) {
                                 log.error(c.pos(), Errors.DuplicateCaseLabel);
-                            }
-                        } else if (errorEnumSwitch) {
-                            //error recovery: the selector is erroneous, and all the case labels
-                            //are identifiers. This could be an enum switch - don't report resolve
-                            //error for the case label:
-                            var prevResolveHelper = rs.basicLogResolveHelper;
-                            try {
-                                rs.basicLogResolveHelper = rs.silentLogResolveHelper;
-                                attribExpr(pat, switchEnv, seltype);
-                            } finally {
-                                rs.basicLogResolveHelper = prevResolveHelper;
                             }
                         } else {
                             Type pattype = attribExpr(pat, switchEnv, seltype);
@@ -1822,7 +1810,8 @@ public class Attr extends JCTree.Visitor {
                     Type ctype = attribStat(c.param, catchEnv);
                     if (TreeInfo.isMultiCatch(c)) {
                         //multi-catch parameter is implicitly marked as final
-                        c.param.sym.flags_field |= FINAL | UNION;
+                        c.param.sym.flags_field |= FINAL;
+                        c.param.sym.setFlag(VarSymbolFlags.UNION);
                     }
                     if (c.param.sym.kind == VAR) {
                         c.param.sym.setData(ElementKind.EXCEPTION_PARAMETER);
@@ -2062,7 +2051,7 @@ public class Attr extends JCTree.Visitor {
                         .collect(List.collector()));
         }
 
-    static final TypeTag[] primitiveTags = new TypeTag[]{
+    final static TypeTag[] primitiveTags = new TypeTag[]{
         BYTE,
         CHAR,
         SHORT,
@@ -3808,7 +3797,7 @@ public class Attr extends JCTree.Visitor {
         Type owntype = attribTree(tree.expr, env, resultInfo);
         result = check(tree, owntype, pkind(), resultInfo);
         Symbol sym = TreeInfo.symbol(tree);
-        if (sym != null && sym.kind.matches(KindSelector.TYP_PCK) && sym.kind != Kind.ERR)
+        if (sym != null && sym.kind.matches(KindSelector.TYP_PCK))
             log.error(tree.pos(), Errors.IllegalParenthesizedExpression);
     }
 
@@ -3963,24 +3952,21 @@ public class Attr extends JCTree.Visitor {
                 tree.expr.pos(), attribExpr(tree.expr, env));
         Type clazztype;
         JCTree typeTree;
-        boolean checkRawTypes;
         if (tree.pattern.getTag() == BINDINGPATTERN) {
             attribTree(tree.pattern, env, unknownExprInfo);
             clazztype = tree.pattern.type;
             if (types.isSubtype(exprtype, clazztype) &&
                 !exprtype.isErroneous() && !clazztype.isErroneous()) {
-                log.error(tree.pos(), Errors.InstanceofPatternNoSubtype(exprtype, clazztype));
+                log.error(tree.pos(), Errors.InstanceofPatternNoSubtype(clazztype, exprtype));
             }
             JCBindingPattern pattern = (JCBindingPattern) tree.pattern;
             typeTree = pattern.var.vartype;
             if (!clazztype.hasTag(TYPEVAR)) {
                 clazztype = chk.checkClassOrArrayType(pattern.var.vartype.pos(), clazztype);
             }
-            checkRawTypes = true;
         } else {
             clazztype = attribType(tree.pattern, env);
             typeTree = tree.pattern;
-            checkRawTypes = false;
         }
         if (!clazztype.hasTag(TYPEVAR)) {
             clazztype = chk.checkClassOrArrayType(typeTree.pos(), clazztype);
@@ -4010,7 +3996,7 @@ public class Attr extends JCTree.Visitor {
                 clazztype = types.createErrorType(clazztype);
             }
         }
-        chk.validate(typeTree, env, checkRawTypes);
+        chk.validate(typeTree, env, false);
         chk.checkCastable(tree.expr.pos(), exprtype, clazztype);
         result = check(tree, syms.booleanType, KindSelector.VAL, resultInfo);
     }
@@ -4077,7 +4063,7 @@ public class Attr extends JCTree.Visitor {
             // Find environment in which identifier is defined.
             while (symEnv.outer != null &&
                    !sym.isMemberOf(symEnv.enclClass.sym, types)) {
-                if ((symEnv.enclClass.sym.flags() & NOOUTERTHIS) != 0)
+                if (symEnv.enclClass.sym.isFlagSet(TypeSymbolFlags.NOOUTERTHIS))
                     noOuterThisPath = false;
                 symEnv = symEnv.outer;
             }
@@ -4948,12 +4934,12 @@ public class Attr extends JCTree.Visitor {
                 extending, implementing, List.nil());
 
             ClassSymbol c = (ClassSymbol)owntype.tsym;
-            Assert.check((c.flags() & COMPOUND) != 0);
+            Assert.check(c.isFlagSet(TypeSymbolFlags.COMPOUND));
             cd.sym = c;
             c.sourcefile = env.toplevel.sourcefile;
 
             // ... and attribute the bound class
-            c.flags_field |= UNATTRIBUTED;
+            c.setFlag(TypeSymbolFlags.UNATTRIBUTED);
             Env<AttrContext> cenv = enter.classEnv(cd, env);
             typeEnvs.put(c, cenv);
             attribClass(c);
@@ -5089,7 +5075,7 @@ public class Attr extends JCTree.Visitor {
         chk.checkNonCyclic(null, c.type);
 
         Type st = types.supertype(c.type);
-        if ((c.flags_field & Flags.COMPOUND) == 0) {
+        if (!c.isFlagSetNoComplete(TypeSymbolFlags.COMPOUND)) {
             // First, attribute superclass.
             if (st.hasTag(CLASS))
                 attribClass((ClassSymbol)st.tsym);
@@ -5102,8 +5088,8 @@ public class Attr extends JCTree.Visitor {
         // The previous operations might have attributed the current class
         // if there was a cycle. So we test first whether the class is still
         // UNATTRIBUTED.
-        if ((c.flags_field & UNATTRIBUTED) != 0) {
-            c.flags_field &= ~UNATTRIBUTED;
+        if (c.isFlagSetNoComplete(TypeSymbolFlags.UNATTRIBUTED)) {
+            c.clearFlag(TypeSymbolFlags.UNATTRIBUTED);
 
             // Get environment current at the point of class definition.
             Env<AttrContext> env = typeEnvs.get(c);
@@ -5222,13 +5208,15 @@ public class Attr extends JCTree.Visitor {
                 env.info.returnResult = null;
                 // java.lang.Enum may not be subclassed by a non-enum
                 if (st.tsym == syms.enumSym &&
-                    ((c.flags_field & (Flags.ENUM|Flags.COMPOUND)) == 0))
+                    (c.flags_field & Flags.ENUM) == 0 &&
+                    !c.isFlagSetNoComplete(TypeSymbolFlags.COMPOUND))
                     log.error(env.tree.pos(), Errors.EnumNoSubclassing);
 
                 // Enums may not be extended by source-level classes
                 if (st.tsym != null &&
                     ((st.tsym.flags_field & Flags.ENUM) != 0) &&
-                    ((c.flags_field & (Flags.ENUM | Flags.COMPOUND)) == 0)) {
+                    (c.flags_field & Flags.ENUM) == 0 &&
+                    !c.isFlagSetNoComplete(TypeSymbolFlags.COMPOUND)) {
                     log.error(env.tree.pos(), Errors.EnumTypesNotExtensible);
                 }
 

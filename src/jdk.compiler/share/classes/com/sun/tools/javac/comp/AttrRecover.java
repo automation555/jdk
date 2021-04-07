@@ -25,6 +25,7 @@
 package com.sun.tools.javac.comp;
 
 import com.sun.tools.javac.code.Flags;
+import com.sun.tools.javac.code.Flags.TypeSymbolFlags;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.TypeSymbol;
 import com.sun.tools.javac.code.Symtab;
@@ -206,7 +207,7 @@ public class AttrRecover {
                                  Symbol sym,
                                  Env<AttrContext> env,
                                  ResultInfo resultInfo) {
-        if ((sym.flags_field & Flags.RECOVERABLE) != 0 && env.info.attributionMode.recover()) {
+        if (sym.isFlagSet(TypeSymbolFlags.RECOVERABLE) && env.info.attributionMode.recover()) {
             recoveryTodo.append(new RecoverTodo(tree, site, sym, ((RecoveryErrorType) sym.type).candidateSymbol, attr.copyEnv(env), resultInfo));
             return syms.errType;
         } else {
@@ -237,7 +238,7 @@ public class AttrRecover {
                 case "compiler.misc.infer.arg.length.mismatch":
                 case "compiler.misc.arg.length.mismatch":
                     errSymbol.type = new RecoveryErrorType((Type.ErrorType) errSymbol.type, candSym);
-                    errSymbol.flags_field |= Flags.RECOVERABLE;
+                    errSymbol.setFlag(TypeSymbolFlags.RECOVERABLE);
                     return ;
                 default:
                     break;
