@@ -342,11 +342,7 @@ void ShenandoahBarrierSetAssembler::load_reference_barrier(MacroAssembler* masm,
 #endif
 
   Address gc_state(thread, in_bytes(ShenandoahThreadLocalData::gc_state_offset()));
-  int flags = ShenandoahHeap::HAS_FORWARDED;
-  if (!is_strong) {
-    flags |= ShenandoahHeap::WEAK_ROOTS;
-  }
-  __ testb(gc_state, flags);
+  __ testb(gc_state, ShenandoahHeap::HAS_FORWARDED);
   __ jcc(Assembler::zero, heap_stable);
 
   Register tmp1 = noreg, tmp2 = noreg;
@@ -734,7 +730,9 @@ void ShenandoahBarrierSetAssembler::cmpxchg_oop(MacroAssembler* masm,
   __ jcc(Assembler::noParity, L_failure);  // When odd number of bits, then not forwarded
   __ jcc(Assembler::zero, L_failure);      // When it is 00, then also not forwarded
 
-  // Load and mask forwarding pointer
+  // Load and mask forwarding pointer with "consume" semantics, which in this case
+  // can be done with just a plain load, as x86 maintains ordering with address
+  // dependencies. See ShenandoahForwarding helpers for more discussion.
   __ movptr(tmp2, Address(tmp2, oopDesc::mark_offset_in_bytes()));
   __ shrptr(tmp2, 2);
   __ shlptr(tmp2, 2);
