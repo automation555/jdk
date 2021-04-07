@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -46,7 +46,6 @@ import java.util.Properties;
 import jdk.internal.access.JavaLangReflectAccess;
 import jdk.internal.access.SharedSecrets;
 import jdk.internal.misc.VM;
-import sun.reflect.misc.ReflectUtil;
 import sun.security.action.GetPropertyAction;
 import sun.security.util.SecurityConstants;
 
@@ -202,15 +201,9 @@ public class ReflectionFactory {
             method = root;
         }
 
-        if (noInflation && !method.getDeclaringClass().isHidden()
-                && !ReflectUtil.isVMAnonymousClass(method.getDeclaringClass())) {
-            return new MethodAccessorGenerator().
-                generateMethod(method.getDeclaringClass(),
-                               method.getName(),
-                               method.getParameterTypes(),
-                               method.getReturnType(),
-                               method.getExceptionTypes(),
-                               method.getModifiers());
+        if (noInflation) {
+            return MHAccessorGenerator.
+                generateMethod(method);
         } else {
             NativeMethodAccessorImpl acc =
                 new NativeMethodAccessorImpl(method);
@@ -239,21 +232,9 @@ public class ReflectionFactory {
             c = root;
         }
 
-        // Bootstrapping issue: since we use Class.newInstance() in
-        // the ConstructorAccessor generation process, we have to
-        // break the cycle here.
-        if (Reflection.isSubclassOf(declaringClass,
-                                    ConstructorAccessorImpl.class)) {
-            return new BootstrapConstructorAccessorImpl(c);
-        }
-
-        if (noInflation && !c.getDeclaringClass().isHidden()
-                && !ReflectUtil.isVMAnonymousClass(c.getDeclaringClass())) {
-            return new MethodAccessorGenerator().
-                generateConstructor(c.getDeclaringClass(),
-                                    c.getParameterTypes(),
-                                    c.getExceptionTypes(),
-                                    c.getModifiers());
+        if (noInflation) {
+            return MHAccessorGenerator.
+                generateConstructor(c);
         } else {
             NativeConstructorAccessorImpl acc =
                 new NativeConstructorAccessorImpl(c);
@@ -462,12 +443,8 @@ public class ReflectionFactory {
                                                      Constructor<?> constructorToCall) {
 
 
-        ConstructorAccessor acc = new MethodAccessorGenerator().
-            generateSerializationConstructor(cl,
-                                             constructorToCall.getParameterTypes(),
-                                             constructorToCall.getExceptionTypes(),
-                                             constructorToCall.getModifiers(),
-                                             constructorToCall.getDeclaringClass());
+        ConstructorAccessor acc = MHAccessorGenerator.
+            generateSerializationConstructor(constructorToCall, cl);
         Constructor<?> c = newConstructor(constructorToCall.getDeclaringClass(),
                                           constructorToCall.getParameterTypes(),
                                           constructorToCall.getExceptionTypes(),

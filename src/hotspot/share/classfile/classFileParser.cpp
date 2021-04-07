@@ -30,6 +30,7 @@
 #include "classfile/classLoaderData.inline.hpp"
 #include "classfile/classLoadInfo.hpp"
 #include "classfile/defaultMethods.hpp"
+#include "classfile/dictionary.hpp"
 #include "classfile/fieldLayoutBuilder.hpp"
 #include "classfile/javaClasses.inline.hpp"
 #include "classfile/moduleEntry.hpp"
@@ -1240,7 +1241,8 @@ static void parse_annotations(const ConstantPool* const cp,
                               const u1* buffer, int limit,
                               AnnotationCollector* coll,
                               ClassLoaderData* loader_data,
-                              const bool can_access_vm_annotations) {
+                              const bool can_access_vm_annotations,
+                              TRAPS) {
 
   assert(cp != NULL, "invariant");
   assert(buffer != NULL, "invariant");
@@ -1417,7 +1419,8 @@ void ClassFileParser::parse_field_attributes(const ClassFileStream* const cfs,
                           runtime_visible_annotations_length,
                           parsed_annotations,
                           _loader_data,
-                          _can_access_vm_annotations);
+                          _can_access_vm_annotations,
+                          CHECK);
         cfs->skip_u1_fast(runtime_visible_annotations_length);
       } else if (attribute_name == vmSymbols::tag_runtime_invisible_annotations()) {
         if (runtime_invisible_annotations_exists) {
@@ -2732,7 +2735,8 @@ Method* ClassFileParser::parse_method(const ClassFileStream* const cfs,
                           runtime_visible_annotations_length,
                           &parsed_annotations,
                           _loader_data,
-                          _can_access_vm_annotations);
+                          _can_access_vm_annotations,
+                          CHECK_NULL);
         cfs->skip_u1_fast(runtime_visible_annotations_length);
       } else if (method_attribute_name == vmSymbols::tag_runtime_invisible_annotations()) {
         if (runtime_invisible_annotations_exists) {
@@ -3560,7 +3564,7 @@ u2 ClassFileParser::parse_classfile_record_attribute(const ClassFileStream* cons
   return calculate_attr_size;
 }
 
-void ClassFileParser::parse_classfile_synthetic_attribute() {
+void ClassFileParser::parse_classfile_synthetic_attribute(TRAPS) {
   set_class_synthetic_flag(true);
 }
 
@@ -3760,9 +3764,9 @@ void ClassFileParser::parse_classfile_attributes(const ClassFileStream* const cf
           attribute_length, THREAD);
         return;
       }
-      parse_classfile_synthetic_attribute();
+      parse_classfile_synthetic_attribute(CHECK);
     } else if (tag == vmSymbols::tag_deprecated()) {
-      // Check for Deprecated tag - 4276120
+      // Check for Deprecatd tag - 4276120
       if (attribute_length != 0) {
         classfile_parse_error(
           "Invalid Deprecated classfile attribute length %u in class file %s",
@@ -3798,7 +3802,8 @@ void ClassFileParser::parse_classfile_attributes(const ClassFileStream* const cf
                           runtime_visible_annotations_length,
                           parsed_annotations,
                           _loader_data,
-                          _can_access_vm_annotations);
+                          _can_access_vm_annotations,
+                          CHECK);
         cfs->skip_u1_fast(runtime_visible_annotations_length);
       } else if (tag == vmSymbols::tag_runtime_invisible_annotations()) {
         if (runtime_invisible_annotations_exists) {
@@ -4068,7 +4073,8 @@ void ClassFileParser::create_combined_annotations(TRAPS) {
 // Transfer ownership of metadata allocated to the InstanceKlass.
 void ClassFileParser::apply_parsed_class_metadata(
                                             InstanceKlass* this_klass,
-                                            int java_fields_count) {
+                                            int java_fields_count,
+                                            TRAPS) {
   assert(this_klass != NULL, "invariant");
 
   _cp->set_pool_holder(this_klass);
@@ -4444,8 +4450,7 @@ void ClassFileParser::check_super_class_access(const InstanceKlass* this_klass, 
     if (!this_klass->class_loader_data()->is_the_null_class_loader_data()) {
       PackageEntry* super_package = super->package();
       if (super_package != NULL &&
-          super_package->name()->fast_compare(vmSymbols::jdk_internal_reflect()) == 0 &&
-          !java_lang_ClassLoader::is_reflection_class_loader(this_klass->class_loader())) {
+          super_package->name()->fast_compare(vmSymbols::jdk_internal_reflect()) == 0) {
         ResourceMark rm(THREAD);
         Exceptions::fthrow(
           THREAD_AND_LOCATION,
@@ -5413,11 +5418,11 @@ void ClassFileParser::fill_instance_klass(InstanceKlass* ik,
 
   // this transfers ownership of a lot of arrays from
   // the parser onto the InstanceKlass*
-  apply_parsed_class_metadata(ik, _java_fields_count);
+  apply_parsed_class_metadata(ik, _java_fields_count, CHECK);
 
   // can only set dynamic nest-host after static nest information is set
   if (cl_inst_info.dynamic_nest_host() != NULL) {
-    ik->set_nest_host(cl_inst_info.dynamic_nest_host());
+    ik->set_nest_host(cl_inst_info.dynamic_nest_host(), THREAD);
   }
 
   // note that is not safe to use the fields in the parser from this point on
@@ -5470,7 +5475,7 @@ void ClassFileParser::fill_instance_klass(InstanceKlass* ik,
 
   // Set PackageEntry for this_klass
   oop cl = ik->class_loader();
-  Handle clh = Handle(THREAD, java_lang_ClassLoader::non_reflection_class_loader(cl));
+  Handle clh = Handle(THREAD, cl);
   ClassLoaderData* cld = ClassLoaderData::class_loader_data_or_null(clh());
   ik->set_package(cld, NULL, CHECK);
 
@@ -5632,8 +5637,8 @@ void ClassFileParser::update_class_name(Symbol* new_class_name) {
 // For an unsafe anonymous class that is in the unnamed package, move it to its host class's
 // package by prepending its host class's package name to its class name and setting
 // its _class_name field.
-void ClassFileParser::prepend_host_package_name(Thread* current, const InstanceKlass* unsafe_anonymous_host) {
-  ResourceMark rm(current);
+void ClassFileParser::prepend_host_package_name(const InstanceKlass* unsafe_anonymous_host, TRAPS) {
+  ResourceMark rm(THREAD);
   assert(strrchr(_class_name->as_C_string(), JVM_SIGNATURE_SLASH) == NULL,
          "Unsafe anonymous class should not be in a package");
   TempNewSymbol host_pkg_name =
@@ -5669,7 +5674,7 @@ void ClassFileParser::fix_unsafe_anonymous_class_name(TRAPS) {
   const jbyte* anon_last_slash = UTF8::strrchr((const jbyte*)_class_name->base(),
                                                _class_name->utf8_length(), JVM_SIGNATURE_SLASH);
   if (anon_last_slash == NULL) {  // Unnamed package
-    prepend_host_package_name(THREAD, _unsafe_anonymous_host);
+    prepend_host_package_name(_unsafe_anonymous_host, CHECK);
   } else {
     if (!_unsafe_anonymous_host->is_same_class_package(_unsafe_anonymous_host->class_loader(), _class_name)) {
       ResourceMark rm(THREAD);
@@ -6256,7 +6261,8 @@ void ClassFileParser::post_process_parsed_stream(const ClassFileStream* const st
                                                     _major_version,
                                                     loader,
                                                     _class_name,
-                                                    _local_interfaces);
+                                                    _local_interfaces,
+                                                    CHECK);
 
   // Size of Java itable (in words)
   _itable_size = _access_flags.is_interface() ? 0 :
