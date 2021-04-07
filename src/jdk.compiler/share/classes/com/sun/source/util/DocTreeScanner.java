@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -439,6 +439,20 @@ public class DocTreeScanner<R,P> implements DocTreeVisitor<R,P> {
     @Override
     public R visitSince(SinceTree node, P p) {
         return scan(node.getBody(), p);
+    }
+
+    /**
+     * {@inheritDoc} This implementation scans the children in left to right order.
+     *
+     * @param node  {@inheritDoc}
+     * @param p  {@inheritDoc}
+     * @return the result of scanning
+     */
+    @Override
+    public R visitSpec(SpecTree node, P p) {
+        R r = scan(node.getURI(), p);
+        r = scanAndReduce(node.getLabel(), p, r);
+        return r;
     }
 
     /**

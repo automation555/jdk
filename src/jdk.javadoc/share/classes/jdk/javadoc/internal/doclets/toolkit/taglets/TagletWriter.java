@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -34,6 +34,7 @@ import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.TypeMirror;
 
 import com.sun.source.doctree.DocTree;
+import com.sun.source.doctree.SpecTree;
 import com.sun.source.doctree.IndexTree;
 import com.sun.source.doctree.LiteralTree;
 import com.sun.source.doctree.ParamTree;
@@ -175,9 +176,19 @@ public abstract class TagletWriter {
     protected abstract Content simpleBlockTagOutput(Element element, List<? extends DocTree> simpleTags, String header);
 
     /**
+     * Returns the output for one or more {@code @spec} tags.
+     *
+     * @param element  the element that owns the doc comment
+     * @param specTags the array of @spec tags.
+     *
+     * @return the output
+     */
+    protected abstract Content specTagOutput(Element element, List<? extends SpecTree> specTags);
+
+    /**
      * Returns the output for a {@code {@systemProperty...}} tag.
      *
-     * @param element           The element that owns the doc comment
+     * @param element           the element that owns the doc comment
      * @param systemPropertyTag the system property tag
      *
      * @return the output

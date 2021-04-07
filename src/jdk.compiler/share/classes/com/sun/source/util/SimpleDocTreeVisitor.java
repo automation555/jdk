@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -397,6 +397,18 @@ public class SimpleDocTreeVisitor<R,P> implements DocTreeVisitor<R, P> {
      */
     @Override
     public R visitSince(SinceTree node, P p) {
+        return defaultAction(node, p);
+    }
+
+    /**
+     * {@inheritDoc} This implementation calls {@code defaultAction}.
+     *
+     * @param node {@inheritDoc}
+     * @param p {@inheritDoc}
+     * @return  the result of {@code defaultAction}
+     */
+    @Override
+    public R visitSpec(SpecTree node, P p) {
         return defaultAction(node, p);
     }
 

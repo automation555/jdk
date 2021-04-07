@@ -99,6 +99,7 @@ import com.sun.source.doctree.DocTree;
 import com.sun.source.doctree.DocTree.Kind;
 import com.sun.source.doctree.EndElementTree;
 import com.sun.source.doctree.ParamTree;
+import com.sun.source.doctree.SpecTree;
 import com.sun.source.doctree.ProvidesTree;
 import com.sun.source.doctree.ReturnTree;
 import com.sun.source.doctree.SeeTree;
@@ -2853,6 +2854,10 @@ public class Utils {
 
     public List<? extends SerialFieldTree> getSerialFieldTrees(VariableElement field) {
         return getBlockTags(field, DocTree.Kind.SERIAL_FIELD, SerialFieldTree.class);
+    }
+
+    public List<? extends SpecTree> getSpecTrees(Element element) {
+        return getBlockTags(element, SPEC, SpecTree.class);
     }
 
     public List<? extends ThrowsTree> getThrowsTrees(Element element) {

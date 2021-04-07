@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -291,8 +291,9 @@ public class JavacTrees extends DocTrees {
                             if (param.isTypeParameter && param.getDescription().isEmpty()) {
                                 correction = 1;
                             }
+                            // fall-through
                         case AUTHOR: case DEPRECATED: case RETURN: case SEE:
-                        case SERIAL: case SERIAL_DATA: case SERIAL_FIELD: case SINCE:
+                        case SERIAL: case SERIAL_DATA: case SERIAL_FIELD: case SINCE: case SPEC:
                         case THROWS: case UNKNOWN_BLOCK_TAG: case VERSION: {
                             DocTree last = getLastChild(tree);
 

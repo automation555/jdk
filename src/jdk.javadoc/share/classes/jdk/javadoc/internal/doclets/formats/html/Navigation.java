@@ -35,7 +35,6 @@ import javax.lang.model.element.ModuleElement;
 import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
 
-import jdk.javadoc.internal.doclets.formats.html.markup.Comment;
 import jdk.javadoc.internal.doclets.formats.html.markup.ContentBuilder;
 import jdk.javadoc.internal.doclets.formats.html.markup.Entity;
 import jdk.javadoc.internal.doclets.formats.html.markup.HtmlAttr;
@@ -94,6 +93,7 @@ public class Navigation {
         HELP,
         INDEX,
         MODULE,
+        EXTERNAL_SPECS,
         OVERVIEW,
         PACKAGE,
         PREVIEW,
@@ -314,6 +314,7 @@ public class Navigation {
             case ALL_CLASSES:
             case ALL_PACKAGES:
             case CONSTANT_VALUES:
+            case EXTERNAL_SPECS:
             case SERIALIZED_FORM:
             case SYSTEM_PROPERTIES:
                 addOverviewLink(tree);
