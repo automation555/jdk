@@ -154,6 +154,8 @@ ciMethod::ciMethod(const methodHandle& h_m, ciInstanceKlass* holder) :
     ciReplay::initialize(this);
   }
 #endif
+
+  CompilerOracle::tag_blackhole_if_possible(h_m);
 }
 
 
@@ -709,8 +711,9 @@ ciMethod* ciMethod::find_monomorphic_target(ciInstanceKlass* caller,
   methodHandle target;
   {
     MutexLocker locker(Compile_lock);
-    InstanceKlass* context = actual_recv->get_instanceKlass();
-    target = methodHandle(THREAD, Dependencies::find_unique_concrete_method(context, root_m->get_Method()));
+    Klass* context = actual_recv->get_Klass();
+    target = methodHandle(THREAD, Dependencies::find_unique_concrete_method(context,
+                                                       root_m->get_Method()));
     // %%% Should upgrade this ciMethod API to look for 1 or 2 concrete methods.
   }
 
@@ -1212,6 +1215,7 @@ bool ciMethod::is_getter      () const {         FETCH_FLAG_FROM_VM(is_getter); 
 bool ciMethod::is_setter      () const {         FETCH_FLAG_FROM_VM(is_setter); }
 bool ciMethod::is_accessor    () const {         FETCH_FLAG_FROM_VM(is_accessor); }
 bool ciMethod::is_initializer () const {         FETCH_FLAG_FROM_VM(is_initializer); }
+bool ciMethod::is_empty       () const {         FETCH_FLAG_FROM_VM(is_empty_method); }
 
 bool ciMethod::is_boxing_method() const {
   if (intrinsic_id() != vmIntrinsics::_none && holder()->is_box_klass()) {

@@ -984,10 +984,8 @@ void GraphBuilder::load_indexed(BasicType type) {
   Value array = apop();
   Value length = NULL;
   if (CSEArrayLength ||
-      (array->as_Constant() != NULL) ||
       (array->as_AccessField() && array->as_AccessField()->field()->is_constant()) ||
-      (array->as_NewArray() && array->as_NewArray()->length() && array->as_NewArray()->length()->type()->is_constant()) ||
-      (array->as_NewMultiArray() && array->as_NewMultiArray()->dims()->at(0)->type()->is_constant())) {
+      (array->as_NewArray() && array->as_NewArray()->length() && array->as_NewArray()->length()->type()->is_constant())) {
     length = append(new ArrayLength(array, state_before));
   }
   push(as_ValueType(type), append(new LoadIndexed(array, index, length, type, state_before)));
@@ -1003,10 +1001,8 @@ void GraphBuilder::store_indexed(BasicType type) {
   Value array = apop();
   Value length = NULL;
   if (CSEArrayLength ||
-      (array->as_Constant() != NULL) ||
       (array->as_AccessField() && array->as_AccessField()->field()->is_constant()) ||
-      (array->as_NewArray() && array->as_NewArray()->length() && array->as_NewArray()->length()->type()->is_constant()) ||
-      (array->as_NewMultiArray() && array->as_NewMultiArray()->dims()->at(0)->type()->is_constant())) {
+      (array->as_NewArray() && array->as_NewArray()->length() && array->as_NewArray()->length()->type()->is_constant())) {
     length = append(new ArrayLength(array, state_before));
   }
   ciType* array_type = array->declared_type();
@@ -3419,7 +3415,7 @@ bool GraphBuilder::try_inline(ciMethod* callee, bool holder_known, bool ignore_r
 
   // handle intrinsics
   if (callee->intrinsic_id() != vmIntrinsics::_none &&
-      (CheckIntrinsics ? callee->intrinsic_candidate() : true)) {
+      callee->check_intrinsic_candidate()) {
     if (try_inline_intrinsics(callee, ignore_return)) {
       print_inlining(callee, "intrinsic");
       if (callee->has_reserved_stack_access()) {

@@ -3203,6 +3203,10 @@ void LIRGenerator::do_Intrinsic(Intrinsic* x) {
     do_vectorizedMismatch(x);
     break;
 
+  case vmIntrinsics::_blackhole:
+    do_blackhole(x);
+    break;
+
   default: ShouldNotReachHere(); break;
   }
 }
@@ -3622,6 +3626,15 @@ void LIRGenerator::do_RangeCheckPredicate(RangeCheckPredicate *x) {
   }
 }
 
+void LIRGenerator::do_blackhole(Intrinsic *x) {
+  assert(!x->has_receiver(), "Should have been checked before: only static methods here");
+  for (int c = 0; c < x->number_of_arguments(); c++) {
+    // Load the argument
+    LIRItem vitem(x->argument_at(c), this);
+    vitem.load_item();
+    // ...and leave it unused.
+  }
+}
 
 LIR_Opr LIRGenerator::call_runtime(Value arg1, address entry, ValueType* result_type, CodeEmitInfo* info) {
   LIRItemList args(1);
