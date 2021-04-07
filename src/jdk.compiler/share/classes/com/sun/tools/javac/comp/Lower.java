@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -92,9 +92,13 @@ public class Lower extends TreeTranslator {
     private DiagnosticPosition make_pos;
     private final ConstFold cfolder;
     private final Target target;
+    private final Source source;
     private final TypeEnvs typeEnvs;
     private final Name dollarAssertionsDisabled;
+    private final Name classDollar;
+    private final Name dollarCloseResource;
     private final Types types;
+    private final JCDiagnostic.Factory diags;
     private final boolean debugLower;
     private final boolean disableProtectedAccessors; // experimental
     private final PkgInfo pkginfoOpt;
@@ -111,11 +115,17 @@ public class Lower extends TreeTranslator {
         make = TreeMaker.instance(context);
         cfolder = ConstFold.instance(context);
         target = Target.instance(context);
+        source = Source.instance(context);
         typeEnvs = TypeEnvs.instance(context);
         dollarAssertionsDisabled = names.
             fromString(target.syntheticNameChar() + "assertionsDisabled");
+        classDollar = names.
+            fromString("class" + target.syntheticNameChar());
+        dollarCloseResource = names.
+            fromString(target.syntheticNameChar() + "closeResource");
 
         types = Types.instance(context);
+        diags = JCDiagnostic.Factory.instance(context);
         Options options = Options.instance(context);
         debugLower = options.isSet("debuglower");
         pkginfoOpt = PkgInfo.get(options);
@@ -1213,7 +1223,7 @@ public class Lower extends TreeTranslator {
                 //sym is a local variable - check the lambda translation map to
                 //see if sym has been translated to something else in the current
                 //scope (by LambdaToMethod)
-                Symbol translatedSym = lambdaTranslationMap.get(sym.baseSymbol());
+                Symbol translatedSym = lambdaTranslationMap.get(sym);
                 if (translatedSym != null) {
                     tree = make.at(tree.pos).Ident(translatedSym);
                 }
@@ -3488,9 +3498,17 @@ public class Lower extends TreeTranslator {
                                            names.iterator,
                                            eType,
                                            List.nil());
+            Type returnType = types.asSuper(iterator.type.getReturnType(), syms.iteratorType.tsym);
+            if (returnType == null) {
+                log.error(tree.pos(),
+                          Errors.OverrideIncompatibleRet(
+                                  diags.fragment("foreach.cant.get.applicable.iterator"),
+                                  iterator.type.getReturnType(),
+                                  syms.iteratorType));
+                returnType = iterator.type.getReturnType();
+            }
             VarSymbol itvar = new VarSymbol(SYNTHETIC, names.fromString("i" + target.syntheticNameChar()),
-                                            types.erasure(types.asSuper(iterator.type.getReturnType(), syms.iteratorType.tsym)),
-                                            currentMethodSym);
+                                            types.erasure(returnType), currentMethodSym);
 
              JCStatement init = make.
                 VarDef(itvar, make.App(make.Select(tree.expr, iterator)
@@ -3877,9 +3895,7 @@ public class Lower extends TreeTranslator {
 
                 stmtList.append(switch2);
 
-                JCBlock res = make.Block(0L, stmtList.toList());
-                res.endpos = TreeInfo.endPos(tree);
-                return res;
+                return make.Block(0L, stmtList.toList());
             } else {
                 JCSwitchExpression switch2 = make.SwitchExpression(make.Ident(dollar_tmp), lb.toList());
 
