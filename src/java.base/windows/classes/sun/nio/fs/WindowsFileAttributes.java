@@ -347,6 +347,15 @@ class WindowsFileAttributes
         }
 
         // file is reparse point so need to open file to get attributes
+        return getWithFileKey(path, followLinks);
+    }
+
+    /**
+     * Returns attributes of given file.
+     */
+    static WindowsFileAttributes getWithFileKey(WindowsPath path, boolean followLinks)
+        throws WindowsException
+    {
         long handle = path.openForReadAttributeAccess(followLinks);
         try {
             return readAttributes(handle);
@@ -429,10 +438,6 @@ class WindowsFileAttributes
     @Override
     public boolean isSymbolicLink() {
         return reparseTag == IO_REPARSE_TAG_SYMLINK;
-    }
-
-    boolean isUnixDomainSocket() {
-        return reparseTag == IO_REPARSE_TAG_AF_UNIX;
     }
 
     @Override
