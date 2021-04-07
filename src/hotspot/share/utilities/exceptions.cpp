@@ -25,7 +25,6 @@
 #include "precompiled.hpp"
 #include "classfile/javaClasses.hpp"
 #include "classfile/systemDictionary.hpp"
-#include "classfile/vmClasses.hpp"
 #include "classfile/vmSymbols.hpp"
 #include "compiler/compileBroker.hpp"
 #include "logging/log.hpp"
@@ -43,6 +42,9 @@
 #include "runtime/atomic.hpp"
 #include "utilities/events.hpp"
 #include "utilities/exceptions.hpp"
+#if INCLUDE_JFR
+#include "jfr/jfrEvents.hpp"
+#endif
 
 // Implementation of ThreadShadow
 void check_ThreadShadow() {
@@ -74,8 +76,8 @@ void ThreadShadow::clear_pending_exception() {
 
 void ThreadShadow::clear_pending_nonasync_exception() {
   // Do not clear probable async exceptions.
-  if (!_pending_exception->is_a(vmClasses::ThreadDeath_klass()) &&
-      (_pending_exception->klass() != vmClasses::InternalError_klass() ||
+  if (!_pending_exception->is_a(SystemDictionary::ThreadDeath_klass()) &&
+      (_pending_exception->klass() != SystemDictionary::InternalError_klass() ||
        java_lang_InternalError::during_unsafe_access(_pending_exception) != JNI_TRUE)) {
     clear_pending_exception();
   }
@@ -95,7 +97,7 @@ bool Exceptions::special_exception(Thread* thread, const char* file, int line, H
   // to prevent infinite recursion trying to initialize stack overflow without
   // adequate stack space.
   // This can happen with stress testing a large value of StackShadowPages
-  if (h_exception()->klass() == vmClasses::StackOverflowError_klass()) {
+  if (h_exception()->klass() == SystemDictionary::StackOverflowError_klass()) {
     InstanceKlass* ik = InstanceKlass::cast(h_exception->klass());
     assert(ik->is_initialized(),
            "need to increase java_thread_min_stack_allowed calculation");
@@ -163,15 +165,15 @@ void Exceptions::_throw(Thread* thread, const char* file, int line, Handle h_exc
     return;
   }
 
-  if (h_exception->is_a(vmClasses::OutOfMemoryError_klass())) {
+  if (h_exception->is_a(SystemDictionary::OutOfMemoryError_klass())) {
     count_out_of_memory_exceptions(h_exception);
   }
 
-  if (h_exception->is_a(vmClasses::LinkageError_klass())) {
+  if (h_exception->is_a(SystemDictionary::LinkageError_klass())) {
     Atomic::inc(&_linkage_errors);
   }
 
-  assert(h_exception->is_a(vmClasses::Throwable_klass()), "exception is not a subclass of java/lang/Throwable");
+  assert(h_exception->is_a(SystemDictionary::Throwable_klass()), "exception is not a subclass of java/lang/Throwable");
 
   // set the pending exception
   thread->set_pending_exception(h_exception(), file, line);
@@ -236,7 +238,7 @@ void Exceptions::_throw_cause(Thread* thread, const char* file, int line, Symbol
 void Exceptions::throw_stack_overflow_exception(Thread* THREAD, const char* file, int line, const methodHandle& method) {
   Handle exception;
   if (!THREAD->has_pending_exception()) {
-    InstanceKlass* k = vmClasses::StackOverflowError_klass();
+    InstanceKlass* k = SystemDictionary::StackOverflowError_klass();
     oop e = k->allocate_instance(CHECK);
     exception = Handle(THREAD, e);  // fill_in_stack trace does gc
     assert(k->is_initialized(), "need to increase java_thread_min_stack_allowed calculation");
@@ -311,7 +313,7 @@ Handle Exceptions::new_exception(Thread *thread, Symbol* name,
 
   // Future: object initializer should take a cause argument
   if (h_cause.not_null()) {
-    assert(h_cause->is_a(vmClasses::Throwable_klass()),
+    assert(h_cause->is_a(SystemDictionary::Throwable_klass()),
         "exception cause is not a subclass of java/lang/Throwable");
     JavaValue result1(T_OBJECT);
     JavaCallArguments args1;
@@ -365,7 +367,7 @@ Handle Exceptions::new_exception(Thread* thread, Symbol* name,
     // around the allocation.
     // If we get an exception from the allocation, prefer that to
     // the exception we are trying to build, or the pending exception.
-    // This is sort of like what PreserveExceptionMark does, except
+    // This is sort of like what PRESERVE_EXCEPTION_MARK does, except
     // for the preferencing and the early returns.
     Handle incoming_exception(thread, NULL);
     if (thread->has_pending_exception()) {
@@ -435,7 +437,7 @@ void Exceptions::wrap_dynamic_exception(bool is_indy, Thread* THREAD) {
 
     // See the "Linking Exceptions" section for the invokedynamic instruction
     // in JVMS 6.5.
-    if (exception->is_a(vmClasses::Error_klass())) {
+    if (exception->is_a(SystemDictionary::Error_klass())) {
       // Pass through an Error, including BootstrapMethodError, any other form
       // of linkage error, or say ThreadDeath/OutOfMemoryError
       if (ls != NULL) {
@@ -462,6 +464,8 @@ volatile int Exceptions::_linkage_errors = 0;
 volatile int Exceptions::_out_of_memory_error_java_heap_errors = 0;
 volatile int Exceptions::_out_of_memory_error_metaspace_errors = 0;
 volatile int Exceptions::_out_of_memory_error_class_metaspace_errors = 0;
+
+JFR_ONLY(volatile int Exceptions::_num_throwables = 0;)
 
 void Exceptions::count_out_of_memory_exceptions(Handle exception) {
   if (exception() == Universe::out_of_memory_error_metaspace()) {
@@ -499,18 +503,9 @@ void Exceptions::print_exception_counts_on_error(outputStream* st) {
 
 // Implementation of ExceptionMark
 
-ExceptionMark::ExceptionMark(Thread* thread) {
-  assert(thread == Thread::current(), "must be");
-  _thread  = thread;
-  check_no_pending_exception();
-}
-
-ExceptionMark::ExceptionMark() {
-  _thread = Thread::current();
-  check_no_pending_exception();
-}
-
-inline void ExceptionMark::check_no_pending_exception() {
+ExceptionMark::ExceptionMark(Thread*& thread) {
+  thread     = Thread::current();
+  _thread    = thread;
   if (_thread->has_pending_exception()) {
     oop exception = _thread->pending_exception();
     _thread->clear_pending_exception(); // Needed to avoid infinite recursion
@@ -554,7 +549,7 @@ void Exceptions::debug_check_abort(Handle exception, const char* message) {
 
 void Exceptions::debug_check_abort_helper(Handle exception, const char* message) {
   ResourceMark rm;
-  if (message == NULL && exception->is_a(vmClasses::Throwable_klass())) {
+  if (message == NULL && exception->is_a(SystemDictionary::Throwable_klass())) {
     oop msg = java_lang_Throwable::message(exception());
     if (msg != NULL) {
       message = java_lang_String::as_utf8_string(msg);
@@ -578,3 +573,31 @@ void Exceptions::log_exception(Handle exception, const char* message) {
                          message);
   }
 }
+
+#if INCLUDE_JFR
+void Exceptions::emit_throw_event(oop exception) {
+  ResourceMark rm;
+
+  oop msg = java_lang_Throwable::message(exception);
+  const char *message = msg == NULL ? NULL : java_lang_String::as_utf8_string(msg);
+  if (exception->is_a(SystemDictionary::Error_klass())) {
+    EventJavaErrorThrow err_event;
+    if (err_event.should_commit()) {
+      err_event.set_message(message);
+      err_event.set_thrownClass(exception->klass());
+      err_event.commit();
+    }
+  }
+  EventJavaExceptionThrow exc_event;
+  if (exc_event.should_commit()) {
+    exc_event.set_message(message);
+    exc_event.set_thrownClass(exception->klass());
+    exc_event.commit();
+  }
+  Atomic::inc(&_num_throwables);
+}
+
+int Exceptions::num_throwables() {
+  return Atomic::load(&_num_throwables);
+}
+#endif
