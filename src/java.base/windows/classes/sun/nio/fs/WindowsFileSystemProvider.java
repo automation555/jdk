@@ -168,6 +168,8 @@ class WindowsFileSystemProvider
         boolean followLinks = Util.followLinks(options);
         if (view == BasicFileAttributeView.class)
             return (V) WindowsFileAttributeViews.createBasicView(file, followLinks);
+        if (view == BasicWithKeyFileAttributeView.class)
+            return (V) WindowsFileAttributeViews.createBasicWithKeyView(file, followLinks);
         if (view == DosFileAttributeView.class)
             return (V) WindowsFileAttributeViews.createDosView(file, followLinks);
         if (view == AclFileAttributeView.class)
@@ -205,6 +207,8 @@ class WindowsFileSystemProvider
         boolean followLinks = Util.followLinks(options);
         if (name.equals("basic"))
             return WindowsFileAttributeViews.createBasicView(file, followLinks);
+        if (name.equals("basicwithkey"))
+            return WindowsFileAttributeViews.createBasicWithKeyView(file, followLinks);
         if (name.equals("dos"))
             return WindowsFileAttributeViews.createDosView(file, followLinks);
         if (name.equals("acl"))
@@ -334,13 +338,6 @@ class WindowsFileSystemProvider
                                 0L);
             fc.close();
         } catch (WindowsException exc) {
-            try {
-                if (exc.lastError() == ERROR_CANT_ACCESS_FILE && isUnixDomainSocket(file)) {
-                    // socket file is accessible
-                    return;
-                }
-            } catch (WindowsException ignore) {}
-
             // Windows errors are very inconsistent when the file is a directory
             // (ERROR_PATH_NOT_FOUND returned for root directories for example)
             // so we retry by attempting to open it as a directory.
@@ -351,11 +348,6 @@ class WindowsFileSystemProvider
                 exc.rethrowAsIOException(file);
             }
         }
-    }
-
-    private static boolean isUnixDomainSocket(WindowsPath path) throws WindowsException {
-        WindowsFileAttributes attrs = WindowsFileAttributes.get(path, false);
-        return attrs.isUnixDomainSocket();
     }
 
     @Override
