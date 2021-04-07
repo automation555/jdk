@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2002, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -65,7 +65,7 @@ public class BytecodeRet extends BytecodeWideable {
     buf.append("ret");
     buf.append(spaces);
     buf.append('#');
-    buf.append(getLocalVarIndex());
+    buf.append(Integer.toString(getLocalVarIndex()));
     return buf.toString();
   }
 }

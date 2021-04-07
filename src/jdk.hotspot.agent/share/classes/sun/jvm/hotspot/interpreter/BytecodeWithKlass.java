@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2002, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -45,7 +45,7 @@ public class BytecodeWithKlass extends BytecodeWithCPIndex {
     buf.append(getJavaBytecodeName());
     buf.append(spaces);
     buf.append('#');
-    buf.append(index());
+    buf.append(Integer.toString(index()));
     buf.append(spaces);
     buf.append("[Class ");
     buf.append(getClassName().asString().replace('/', '.'));

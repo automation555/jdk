@@ -327,7 +327,7 @@ public class TIFFImageMetadata extends IIOMetadata {
         if (times == 1) {
             return s;
         }
-        StringBuffer sb = new StringBuffer((s.length() + 1)*times - 1);
+        StringBuilder sb = new StringBuilder((s.length() + 1)*times - 1);
         sb.append(s);
         for (int i = 1; i < times; i++) {
             sb.append(" ");
@@ -864,7 +864,11 @@ public class TIFFImageMetadata extends IIOMetadata {
                             int mapSize = maxIndex + 1;
                             int paletteLength = 3*mapSize;
                             char[] paletteEntries = new char[paletteLength];
-                            for (Map.Entry<Integer,char[]> paletteEntry : palette.entrySet()) {
+                            Iterator<Map.Entry<Integer,char[]>> paletteIter
+                                = palette.entrySet().iterator();
+                            while(paletteIter.hasNext()) {
+                                Map.Entry<Integer,char[]> paletteEntry
+                                    = paletteIter.next();
                                 int index = paletteEntry.getKey();
                                 char[] rgb = paletteEntry.getValue();
                                 paletteEntries[index] =
@@ -1225,7 +1229,7 @@ public class TIFFImageMetadata extends IIOMetadata {
                         String minute = getAttribute(child, "minute");
                         String second = getAttribute(child, "second");
 
-                        StringBuffer sb = new StringBuffer();
+                        StringBuilder sb = new StringBuilder();
                         sb.append(year);
                         sb.append(":");
                         if(month.length() == 1) {
@@ -1537,7 +1541,9 @@ public class TIFFImageMetadata extends IIOMetadata {
                 int number = Integer.parseInt(getAttribute(node, "number"));
 
                 TIFFTagSet tagSet = null;
-                for (TIFFTagSet t : tagSets) {
+                Iterator<TIFFTagSet> iter = tagSets.iterator();
+                while (iter.hasNext()) {
+                    TIFFTagSet t = iter.next();
                     if (t.getTag(number) != null) {
                         tagSet = t;
                         break;
@@ -1571,7 +1577,9 @@ public class TIFFImageMetadata extends IIOMetadata {
         TIFFIFD ifd = parseIFD(node);
 
         List<TIFFTagSet> rootIFDTagSets = rootIFD.getTagSetList();
-        for (Object o : ifd.getTagSetList()) {
+        Iterator<TIFFTagSet> tagSetIter = ifd.getTagSetList().iterator();
+        while(tagSetIter.hasNext()) {
+            Object o = tagSetIter.next();
             if(o instanceof TIFFTagSet && !rootIFDTagSets.contains(o)) {
                 rootIFD.addTagSet((TIFFTagSet)o);
             }
