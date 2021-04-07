@@ -325,8 +325,14 @@ public final class UUID implements java.io.Serializable, Comparable<UUID> {
      * </ul>
      *
      * @return  The version number of this {@code UUID}
+     * @throws UnsupportedOperationException
+     *         If this {@code UUID} is not an RFC&nbsp;4122 {@link #variant()}.
      */
     public int version() {
+        if (variant() != 2) {
+            throw new UnsupportedOperationException("Not a variant 2 (RFC 4122) UUID");
+        }
+
         // Version is bits masked by 0x000000000000F000 in MS long
         return (int)((mostSigBits >> 12) & 0x0f);
     }
@@ -456,7 +462,6 @@ public final class UUID implements java.io.Serializable, Comparable<UUID> {
      *
      * @return  A string representation of this {@code UUID}
      */
-    @Override
     public String toString() {
         return jla.fastUUID(leastSigBits, mostSigBits);
     }
@@ -466,7 +471,6 @@ public final class UUID implements java.io.Serializable, Comparable<UUID> {
      *
      * @return  A hash code value for this {@code UUID}
      */
-    @Override
     public int hashCode() {
         long hilo = mostSigBits ^ leastSigBits;
         return ((int)(hilo >> 32)) ^ (int) hilo;
@@ -484,7 +488,6 @@ public final class UUID implements java.io.Serializable, Comparable<UUID> {
      * @return  {@code true} if the objects are the same; {@code false}
      *          otherwise
      */
-    @Override
     public boolean equals(Object obj) {
         if ((null == obj) || (obj.getClass() != UUID.class))
             return false;
@@ -509,7 +512,6 @@ public final class UUID implements java.io.Serializable, Comparable<UUID> {
      *          greater than {@code val}
      *
      */
-    @Override
     public int compareTo(UUID val) {
         // The ordering is intentionally set up so that the UUIDs
         // can simply be numerically compared as two numbers
