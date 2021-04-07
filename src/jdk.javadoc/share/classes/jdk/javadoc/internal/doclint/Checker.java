@@ -144,9 +144,6 @@ public class Checker extends DocTreePathScanner<Void, Void> {
     private HtmlTag currHeadingTag;
 
     private int implicitHeadingRank;
-    private boolean inIndex;
-    private boolean inLink;
-    private boolean inSummary;
 
     // <editor-fold defaultstate="collapsed" desc="Top level">
 
@@ -269,20 +266,7 @@ public class Checker extends DocTreePathScanner<Void, Void> {
 
     @Override @DefinedBy(Api.COMPILER_TREE)
     public Void visitDocComment(DocCommentTree tree, Void ignore) {
-        scan(tree.getFirstSentence(), ignore);
-        scan(tree.getBody(), ignore);
-        checkTagStack();
-
-        for (DocTree blockTag : tree.getBlockTags()) {
-            tagStack.clear();
-            scan(blockTag, ignore);
-            checkTagStack();
-        }
-
-        return null;
-    }
-
-    private void checkTagStack() {
+        super.visitDocComment(tree, ignore);
         for (TagStackItem tsi: tagStack) {
             warnIfEmpty(tsi, null);
             if (tsi.tree.getKind() == DocTree.Kind.START_ELEMENT
@@ -291,6 +275,7 @@ public class Checker extends DocTreePathScanner<Void, Void> {
                 env.messages.error(HTML, t, "dc.tag.not.closed", t.getName());
             }
         }
+        return null;
     }
     // </editor-fold>
 
@@ -338,6 +323,9 @@ public class Checker extends DocTreePathScanner<Void, Void> {
     public Void visitStartElement(StartElementTree tree, Void ignore) {
         final Name treeName = tree.getName();
         final HtmlTag t = HtmlTag.get(treeName);
+
+        if (this.shouldSkip()) return null;
+
         if (t == null) {
             env.messages.error(HTML, tree, "dc.tag.unknown", treeName);
         } else if (t.elemKind == ElemKind.HTML4) {
@@ -482,6 +470,8 @@ public class Checker extends DocTreePathScanner<Void, Void> {
                         // <script> may or may not be allowed, depending on --allow-script-in-comments
                         // but we allow it here, and rely on a separate scanner to detect all uses
                         // of JavaScript, including <script> tags, and use in attributes, etc.
+                    case SVG:
+                        // <svg> tag is allowed but no separate scanner hasn't been implemented.
                         break;
 
                     default:
@@ -529,6 +519,9 @@ public class Checker extends DocTreePathScanner<Void, Void> {
     public Void visitEndElement(EndElementTree tree, Void ignore) {
         final Name treeName = tree.getName();
         final HtmlTag t = HtmlTag.get(treeName);
+
+        if (t == null && this.shouldSkip()) return null;
+
         if (t == null) {
             env.messages.error(HTML, tree, "dc.tag.unknown", treeName);
         } else if (t.endKind == HtmlTag.EndKind.NONE) {
@@ -560,7 +553,6 @@ public class Checker extends DocTreePathScanner<Void, Void> {
                     done = true;
                     break;
                 } else if (top.tag == null || top.tag.endKind != HtmlTag.EndKind.REQUIRED) {
-                    warnIfEmpty(top, null);
                     tagStack.pop();
                 } else {
                     boolean found = false;
@@ -611,7 +603,9 @@ public class Checker extends DocTreePathScanner<Void, Void> {
     @Override @DefinedBy(Api.COMPILER_TREE) @SuppressWarnings("fallthrough")
     public Void visitAttribute(AttributeTree tree, Void ignore) {
         HtmlTag currTag = tagStack.peek().tag;
-        if (currTag != null && currTag.elemKind != ElemKind.HTML4) {
+        if (currTag != null
+                && currTag.elemKind != ElemKind.HTML4
+                && !currTag.flags.contains(HtmlTag.Flag.SKIP_CONTENT)) {
             Name name = tree.getName();
             HtmlTag.Attr attr = currTag.getAttr(name);
             if (attr != null) {
@@ -799,9 +793,6 @@ public class Checker extends DocTreePathScanner<Void, Void> {
     @Override @DefinedBy(Api.COMPILER_TREE)
     public Void visitIndex(IndexTree tree, Void ignore) {
         markEnclosingTag(Flag.HAS_INLINE_TAG);
-        if (inIndex) {
-            env.messages.warning(HTML, tree, "dc.tag.nested.tag", "@" + tree.getTagName());
-        }
         for (TagStackItem tsi : tagStack) {
             if (tsi.tag == HtmlTag.A) {
                 env.messages.warning(HTML, tree, "dc.tag.a.within.a",
@@ -809,13 +800,7 @@ public class Checker extends DocTreePathScanner<Void, Void> {
                 break;
             }
         }
-        boolean prevInIndex = inIndex;
-        try {
-            inIndex = true;
-            return super.visitIndex(tree, ignore);
-        } finally {
-            inIndex = prevInIndex;
-        }
+        return super.visitIndex(tree, ignore);
     }
 
     @Override @DefinedBy(Api.COMPILER_TREE)
@@ -829,20 +814,14 @@ public class Checker extends DocTreePathScanner<Void, Void> {
     @Override @DefinedBy(Api.COMPILER_TREE)
     public Void visitLink(LinkTree tree, Void ignore) {
         markEnclosingTag(Flag.HAS_INLINE_TAG);
-        if (inLink) {
-            env.messages.warning(HTML, tree, "dc.tag.nested.tag", "@" + tree.getTagName());
-        }
-        boolean prevInLink = inLink;
         // simulate inline context on tag stack
         HtmlTag t = (tree.getKind() == DocTree.Kind.LINK)
                 ? HtmlTag.CODE : HtmlTag.SPAN;
         tagStack.push(new TagStackItem(tree, t));
         try {
-            inLink = true;
             return super.visitLink(tree, ignore);
         } finally {
             tagStack.pop();
-            inLink = prevInLink;
         }
     }
 
@@ -972,24 +951,15 @@ public class Checker extends DocTreePathScanner<Void, Void> {
     }
 
     @Override @DefinedBy(Api.COMPILER_TREE)
-    public Void visitSummary(SummaryTree tree, Void aVoid) {
+    public Void visitSummary(SummaryTree node, Void aVoid) {
         markEnclosingTag(Flag.HAS_INLINE_TAG);
-        if (inSummary) {
-            env.messages.warning(HTML, tree, "dc.tag.nested.tag", "@" + tree.getTagName());
-        }
-        int idx = env.currDocComment.getFullBody().indexOf(tree);
+        int idx = env.currDocComment.getFullBody().indexOf(node);
         // Warn if the node is preceded by non-whitespace characters,
         // or other non-text nodes.
         if ((idx == 1 && hasNonWhitespaceText) || idx > 1) {
-            env.messages.warning(SYNTAX, tree, "dc.invalid.summary", tree.getTagName());
+            env.messages.warning(SYNTAX, node, "dc.invalid.summary", node.getTagName());
         }
-        boolean prevInSummary = inSummary;
-        try {
-            inSummary = true;
-            return super.visitSummary(tree, aVoid);
-        } finally {
-            inSummary = prevInSummary;
-        }
+        return super.visitSummary(node, aVoid);
     }
 
     @Override @DefinedBy(Api.COMPILER_TREE)
@@ -1120,6 +1090,11 @@ public class Checker extends DocTreePathScanner<Void, Void> {
             default:
                 return false;
         }
+    }
+
+    private boolean shouldSkip() {
+        return !tagStack.isEmpty()
+                && tagStack.peek().tag.flags.contains(HtmlTag.Flag.SKIP_CONTENT);
     }
 
     @Override @DefinedBy(Api.COMPILER_TREE)

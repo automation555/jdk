@@ -20,6 +20,7 @@ public class OtherTagsTest {
      *  <meta>
      *  <noframes> </noframes>
      *  <script> </script>
+     *  <svg width="10" height="10"><circle cx="5" cy="5" r="5"/></svg>
      *  <title> </title>
      */
     public void knownInvalidTags() { }
