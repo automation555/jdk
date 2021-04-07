@@ -37,8 +37,8 @@
 @class MTLPipelineStatesStorage;
 
 /**
- * The MTLPaint class represents paint mode (color, gradient etc.)
- */
+ * The MTLPaint class represents paint mode (color, gradient, e.t.c.)
+ * */
 
 @interface MTLPaint : NSObject
 

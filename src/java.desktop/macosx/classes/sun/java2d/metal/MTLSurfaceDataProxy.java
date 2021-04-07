@@ -50,11 +50,11 @@ public class MTLSurfaceDataProxy extends SurfaceDataProxy {
         return new MTLSurfaceDataProxy(dstConfig, srcData.getTransparency());
     }
 
-    MTLGraphicsConfig mtlgc;
+    MTLGraphicsConfig oglgc;
     int transparency;
 
-    public MTLSurfaceDataProxy(MTLGraphicsConfig mtlgc, int transparency) {
-        this.mtlgc = mtlgc;
+    public MTLSurfaceDataProxy(MTLGraphicsConfig oglgc, int transparency) {
+        this.oglgc = oglgc;
         this.transparency = transparency;
     }
 
@@ -65,7 +65,7 @@ public class MTLSurfaceDataProxy extends SurfaceDataProxy {
     {
         if (cachedData == null) {
             try {
-                cachedData = mtlgc.createManagedSurface(w, h, transparency);
+                cachedData = oglgc.createManagedSurface(w, h, transparency);
             } catch (OutOfMemoryError er) {
                 return null;
             }

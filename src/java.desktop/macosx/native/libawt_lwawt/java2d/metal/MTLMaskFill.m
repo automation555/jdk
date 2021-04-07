@@ -23,6 +23,8 @@
  * questions.
  */
 
+#ifndef HEADLESS
+
 #include "sun_java2d_metal_MTLMaskFill.h"
 
 #include "MTLMaskFill.h"
@@ -112,3 +114,5 @@ Java_sun_java2d_metal_MTLMaskFill_maskFill
         (*env)->ReleasePrimitiveArrayCritical(env, maskArray, mask, JNI_ABORT);
     }
 }
+
+#endif /* !HEADLESS */

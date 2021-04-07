@@ -84,27 +84,13 @@ static void setBlendingFactors(
                                  vertexShaderId:(NSString *)vertexShaderId
                                fragmentShaderId:(NSString *)fragmentShaderId
 {
-    RenderOptions defaultOptions = {JNI_FALSE, JNI_FALSE, 0/*unused*/, {JNI_FALSE, JNI_TRUE}, {JNI_FALSE, JNI_TRUE}, JNI_FALSE, JNI_FALSE, JNI_FALSE};
+    RenderOptions defaultOptions = {JNI_FALSE, JNI_FALSE, 0/*unused*/, {JNI_FALSE, JNI_TRUE}, {JNI_FALSE, JNI_TRUE}, JNI_FALSE};
     return [self getPipelineState:pipelineDescriptor
                    vertexShaderId:vertexShaderId
                  fragmentShaderId:fragmentShaderId
                         composite:nil
                     renderOptions:&defaultOptions
                     stencilNeeded:NO];
-}
-
-- (id<MTLRenderPipelineState>) getPipelineState:(MTLRenderPipelineDescriptor *) pipelineDescriptor
-                                 vertexShaderId:(NSString *)vertexShaderId
-                               fragmentShaderId:(NSString *)fragmentShaderId
-                               stencilNeeded:(bool)stencilNeeded
-{
-    RenderOptions defaultOptions = {JNI_FALSE, JNI_FALSE, 0/*unused*/, {JNI_FALSE, JNI_TRUE}, {JNI_FALSE, JNI_TRUE}, JNI_FALSE, JNI_FALSE, JNI_FALSE};
-    return [self getPipelineState:pipelineDescriptor
-                   vertexShaderId:vertexShaderId
-                 fragmentShaderId:fragmentShaderId
-                        composite:nil
-                    renderOptions:&defaultOptions
-                    stencilNeeded:stencilNeeded];
 }
 
 // Base method to obtain MTLRenderPipelineState.
@@ -196,11 +182,6 @@ static void setBlendingFactors(
             }
             if (stencilNeeded) {
                 pipelineDesc.stencilAttachmentPixelFormat = MTLPixelFormatStencil8;
-            } else {
-                // We continue to use same encoder when we move from shape clip
-                // to other opcodes. So we need to maintain apprppriate state
-                // for stencilAttachmentPixelFormat until we end the encoder
-                pipelineDesc.stencilAttachmentPixelFormat = MTLPixelFormatInvalid;
             }
 
             if (renderOptions->isAA) {

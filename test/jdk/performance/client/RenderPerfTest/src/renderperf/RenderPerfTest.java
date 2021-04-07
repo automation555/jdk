@@ -4,7 +4,9 @@
  *
  * This code is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 only, as
- * published by the Free Software Foundation.
+ * published by the Free Software Foundation.  Oracle designates this
+ * particular file as subject to the "Classpath" exception as provided
+ * by Oracle in the LICENSE file that accompanied this code.
  *
  * This code is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
@@ -760,15 +762,6 @@ public class RenderPerfTest {
         g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
                 RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 
-    private static final Configurable XORMode = (Graphics2D g2d) ->
-        {g2d.setXORMode(Color.WHITE);};
-
-    private static final Configurable XORModeLCDText = (Graphics2D g2d) ->
-        {g2d.setXORMode(Color.WHITE);
-         g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING,
-         RenderingHints.VALUE_TEXT_ANTIALIAS_LCD_HRGB);};
-
-
     public void testFlatOval() throws Exception {
         (new PerfMeter("FlatOval")).exec(createPR(flatRenderer)).report();
     }
@@ -938,30 +931,6 @@ public class RenderPerfTest {
 
     public void testBgrSurfaceBlitImage() throws Exception {
         (new PerfMeter("BgrSurfaceBlitImage")).exec(createPR(bgrSurfaceBlitImageRenderer)).report();
-    }
-
-    public void testFlatOval_XOR() throws Exception {
-        (new PerfMeter("FlatOval_XOR")).exec(createPR(flatRenderer).configure(XORMode)).report();
-    }
-
-    public void testRotatedBox_XOR() throws Exception {
-        (new PerfMeter("RotatedBox_XOR")).exec(createPR(flatBoxRotRenderer).configure(XORMode)).report();
-    }
-
-    public void testLines_XOR() throws Exception {
-        (new PerfMeter("Lines_XOR")).exec(createPR(segRenderer).configure(XORMode)).report();
-    }
-
-    public void testImage_XOR() throws Exception {
-        (new PerfMeter("Image_XOR")).exec(createPR(imgRenderer).configure(XORMode)).report();
-    }
-
-    public void testTextNoAA_XOR() throws Exception {
-        (new PerfMeter("TextNoAA_XOR")).exec(createPR(textRenderer).configure(XORMode)).report();
-    }
-
-    public void testTextLCD_XOR() throws Exception {
-        (new PerfMeter("TextLCD_XOR")).exec(createPR(textRenderer).configure(XORModeLCDText)).report();
     }
 
     public static void main(String[] args)

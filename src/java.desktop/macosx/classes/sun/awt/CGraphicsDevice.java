@@ -70,8 +70,7 @@ public final class CGraphicsDevice extends GraphicsDevice
         this.displayID = displayID;
 
         if (MacOSFlags.isMetalEnabled()) {
-            // Try to create MTLGraphicsConfig, if it fails,
-            // try to create CGLGraphicsConfig as a fallback
+            // Try to create MTLGraphicsConfig, if it fails, try to create CGLGraphicsConfig as a fallback
             this.config = MTLGraphicsConfig.getConfig(this, displayID);
 
             if (this.config != null) {
@@ -79,9 +78,7 @@ public final class CGraphicsDevice extends GraphicsDevice
             } else {
                 // Try falling back to OpenGL pipeline
                 if (MacOSFlags.isMetalVerbose()) {
-                    System.out.println("Metal rendering pipeline" +
-                        " initialization failed,using OpenGL" +
-                        " rendering pipeline");
+                    System.out.println("Metal rendering pipeline initialization failed. Using OpenGL rendering pipeline.");
                 }
 
                 this.config = CGLGraphicsConfig.getConfig(this);
@@ -91,8 +88,7 @@ public final class CGraphicsDevice extends GraphicsDevice
                 }
             }
         } else {
-            // Try to create CGLGraphicsConfig, if it fails,
-            // try to create MTLGraphicsConfig as a fallback
+            // Try to create CGLGraphicsConfig, if it fails, try to create MTLGraphicsConfig as a fallback
             this.config = CGLGraphicsConfig.getConfig(this);
 
             if (this.config != null) {
@@ -100,9 +96,7 @@ public final class CGraphicsDevice extends GraphicsDevice
             } else {
                 // Try falling back to Metal pipeline
                 if (MacOSFlags.isOGLVerbose()) {
-                    System.out.println("OpenGL rendering pipeline" +
-                        " initialization failed,using Metal" +
-                        " rendering pipeline");
+                    System.out.println("OpenGL rendering pipeline initialization failed. Using Metal rendering pipeline.");
                 }
 
                 this.config = MTLGraphicsConfig.getConfig(this, displayID);
@@ -116,8 +110,7 @@ public final class CGraphicsDevice extends GraphicsDevice
         if (!metalPipelineEnabled && !oglPipelineEnabled) {
             // This indicates fallback to other rendering pipeline also failed.
             // Should never reach here
-            throw new InternalError("Error - unable to initialize any" +
-                " rendering pipeline.");
+            throw new InternalError("Error - unable to initialize any rendering pipeline.");
         }
 
         if (metalPipelineEnabled && MacOSFlags.isMetalVerbose()) {
