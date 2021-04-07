@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2008, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -173,16 +173,6 @@ class WindowsNativeDispatcher {
         long bufferAddress, int bufferSize) throws WindowsException;
 
     /**
-     * Retrieves the size of the specified file.
-     *
-     * BOOL GetFileSizeEx(
-     *   HANDLE hFile,
-     *   PLARGE_INTEGER lpFileSize
-     * )
-     */
-    static native long GetFileSizeEx(long handle) throws WindowsException;
-
-    /**
      * HANDLE FindFirstFile(
      *   LPCTSTR lpFileName,
      *   LPWIN32_FIND_DATA lpFindFileData
@@ -284,6 +274,38 @@ class WindowsNativeDispatcher {
      * )
      */
     static native void FindClose(long handle) throws WindowsException;
+
+    static QueryDirectoryInformation OpenNtQueryDirectoryInformation(String path, NativeBuffer buffer) throws WindowsException {
+        NativeBuffer pathBuffer = asNativeBuffer(path);
+        try {
+            QueryDirectoryInformation data = new QueryDirectoryInformation();
+            OpenNtQueryDirectoryInformation0(pathBuffer.address(), buffer.address(), buffer.size(), data);
+            return data;
+        } finally {
+            pathBuffer.release();
+        }
+    }
+    static class QueryDirectoryInformation {
+        private long handle;
+        private int volSerialNumber;
+
+        private QueryDirectoryInformation() { }
+        public long handle()         { return handle; }
+        public int volSerialNumber() { return volSerialNumber; }
+    }
+    private static native void OpenNtQueryDirectoryInformation0(long lpFileName, long buffer, int bufferSize, QueryDirectoryInformation obj)
+        throws WindowsException;
+
+    static boolean NextNtQueryDirectoryInformation(QueryDirectoryInformation data, NativeBuffer buffer) throws WindowsException {
+        return NextNtQueryDirectoryInformation0(data.handle(), buffer.address(), buffer.size());
+    }
+
+    private static native boolean NextNtQueryDirectoryInformation0(long handle, long buffer, int bufferSize)
+        throws WindowsException;
+
+    static void CloseNtQueryDirectoryInformation(QueryDirectoryInformation data) throws WindowsException {
+        CloseHandle(data.handle);
+    }
 
     /**
      * GetFileInformationByHandle(
