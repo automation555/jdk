@@ -34,6 +34,7 @@ import java.security.spec.KeySpec;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.X509EncodedKeySpec;
 import java.security.spec.PKCS8EncodedKeySpec;
+import java.util.Arrays;
 import javax.crypto.spec.DHPublicKeySpec;
 import javax.crypto.spec.DHPrivateKeySpec;
 import javax.crypto.spec.DHParameterSpec;
@@ -99,8 +100,7 @@ public final class DHKeyFactory extends KeyFactorySpi {
      * is inappropriate for this key factory to produce a private key.
      */
     protected PrivateKey engineGeneratePrivate(KeySpec keySpec)
-        throws InvalidKeySpecException
-    {
+            throws InvalidKeySpecException {
         try {
             if (keySpec instanceof DHPrivateKeySpec) {
                 DHPrivateKeySpec dhPrivKeySpec = (DHPrivateKeySpec)keySpec;
@@ -109,9 +109,12 @@ public final class DHKeyFactory extends KeyFactorySpi {
                                         dhPrivKeySpec.getG());
 
             } else if (keySpec instanceof PKCS8EncodedKeySpec) {
-                return new DHPrivateKey
-                    (((PKCS8EncodedKeySpec)keySpec).getEncoded());
-
+                byte[] encoded = ((PKCS8EncodedKeySpec)keySpec).getEncoded();
+                try {
+                    return new DHPrivateKey(encoded);
+                } finally {
+                    Arrays.fill(encoded, (byte)0);
+                }
             } else {
                 throw new InvalidKeySpecException
                     ("Inappropriate key specification");
@@ -145,7 +148,7 @@ public final class DHKeyFactory extends KeyFactorySpi {
 
         if (key instanceof javax.crypto.interfaces.DHPublicKey) {
 
-            if (keySpec.isAssignableFrom(DHPublicKeySpec.class)) {
+            if (DHPublicKeySpec.class.isAssignableFrom(keySpec)) {
                 javax.crypto.interfaces.DHPublicKey dhPubKey
                     = (javax.crypto.interfaces.DHPublicKey) key;
                 params = dhPubKey.getParams();
@@ -153,7 +156,7 @@ public final class DHKeyFactory extends KeyFactorySpi {
                                                         params.getP(),
                                                         params.getG()));
 
-            } else if (keySpec.isAssignableFrom(X509EncodedKeySpec.class)) {
+            } else if (X509EncodedKeySpec.class.isAssignableFrom(keySpec)) {
                 return keySpec.cast(new X509EncodedKeySpec(key.getEncoded()));
 
             } else {
@@ -163,7 +166,7 @@ public final class DHKeyFactory extends KeyFactorySpi {
 
         } else if (key instanceof javax.crypto.interfaces.DHPrivateKey) {
 
-            if (keySpec.isAssignableFrom(DHPrivateKeySpec.class)) {
+            if (DHPrivateKeySpec.class.isAssignableFrom(keySpec)) {
                 javax.crypto.interfaces.DHPrivateKey dhPrivKey
                     = (javax.crypto.interfaces.DHPrivateKey)key;
                 params = dhPrivKey.getParams();
@@ -171,9 +174,13 @@ public final class DHKeyFactory extends KeyFactorySpi {
                                                          params.getP(),
                                                          params.getG()));
 
-            } else if (keySpec.isAssignableFrom(PKCS8EncodedKeySpec.class)) {
-                return keySpec.cast(new PKCS8EncodedKeySpec(key.getEncoded()));
-
+            } else if (PKCS8EncodedKeySpec.class.isAssignableFrom(keySpec)) {
+                byte[] encoded = key.getEncoded();
+                try {
+                    return keySpec.cast(new PKCS8EncodedKeySpec(encoded));
+                } finally {
+                    Arrays.fill(encoded, (byte)0);
+                }
             } else {
                 throw new InvalidKeySpecException
                     ("Inappropriate key specification");

@@ -465,7 +465,7 @@ public class BigInteger extends Number implements Comparable<BigInteger> {
      * consists of an optional minus or plus sign followed by a
      * sequence of one or more digits in the specified radix.  The
      * character-to-digit mapping is provided by {@link
-     * Character#digit(char, int) Character.digit}.  The String may
+     * Character#digit(char, char) Character.digit}.  The String may
      * not contain any extraneous characters (whitespace, for
      * example).
      *
@@ -662,7 +662,7 @@ public class BigInteger extends Number implements Comparable<BigInteger> {
      * into a BigInteger.  The String representation consists of an
      * optional minus or plus sign followed by a sequence of one or
      * more decimal digits.  The character-to-digit mapping is
-     * provided by {@link Character#digit(char, int)
+     * provided by {@link Character#digit(char, char)
      * Character.digit}.  The String may not contain any extraneous
      * characters (whitespace, for example).
      *
@@ -688,7 +688,23 @@ public class BigInteger extends Number implements Comparable<BigInteger> {
      * @see #bitLength()
      */
     public BigInteger(int numBits, Random rnd) {
-        this(1, randomBits(numBits, rnd));
+        byte[] magnitude = randomBits(numBits, rnd);
+
+        try {
+            // stripLeadingZeroBytes() returns a zero length array if len == 0
+            this.mag = stripLeadingZeroBytes(magnitude, 0, magnitude.length);
+
+            if (this.mag.length == 0) {
+                this.signum = 0;
+            } else {
+                this.signum = 1;
+            }
+            if (mag.length >= MAX_MAG_LENGTH) {
+                checkRange();
+            }
+        } finally {
+            Arrays.fill(magnitude, (byte)0);
+        }
     }
 
     private static byte[] randomBits(int numBits, Random rnd) {
@@ -3868,9 +3884,10 @@ public class BigInteger extends Number implements Comparable<BigInteger> {
         if (x == this)
             return true;
 
-        if (!(x instanceof BigInteger xInt))
+        if (!(x instanceof BigInteger))
             return false;
 
+        BigInteger xInt = (BigInteger) x;
         if (xInt.signum != signum)
             return false;
 
@@ -3973,7 +3990,7 @@ public class BigInteger extends Number implements Comparable<BigInteger> {
      * If {@code numZeros > 0}, appends that many zeros to the
      * specified StringBuilder; otherwise, does nothing.
      *
-     * @param buf       The StringBuilder that will be appended to.
+     * @param sb        The StringBuilder that will be appended to.
      * @param numZeros  The number of zeros to append.
      */
     private static void padWithZeros(StringBuilder buf, int numZeros) {
@@ -3992,7 +4009,7 @@ public class BigInteger extends Number implements Comparable<BigInteger> {
      * (pre-pending with zeros) will be effected.
      *
      * @param radix  The base to convert to.
-     * @param buf    The StringBuilder that will be appended to in place.
+     * @param sb     The StringBuilder that will be appended to in place.
      * @param digits The minimum number of digits to pad to.
      */
     private void smallToString(int radix, StringBuilder buf, int digits) {
@@ -4625,7 +4642,7 @@ public class BigInteger extends Number implements Comparable<BigInteger> {
      * least significant). If the magnitude is zero, return value is undefined.
      *
      * <p>Note: never used for a BigInteger with a magnitude of zero.
-     * @see #getInt
+     * @see #getInt.
      */
     private int firstNonzeroIntNum() {
         int fn = firstNonzeroIntNumPlusTwo - 2;
