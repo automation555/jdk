@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2008, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -40,6 +40,7 @@ import sun.invoke.util.ValueConversions;
 import sun.invoke.util.VerifyType;
 import sun.invoke.util.Wrapper;
 
+import java.lang.constant.ConstantDescs;
 import java.lang.invoke.MethodHandles.Lookup;
 import java.lang.reflect.Array;
 import java.nio.ByteOrder;
@@ -49,11 +50,13 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
 import static java.lang.invoke.LambdaForm.*;
 import static java.lang.invoke.MethodHandleStatics.*;
+import static java.lang.invoke.MethodHandles.Lookup.ClassOption.NESTMATE;
 import static java.lang.invoke.MethodHandles.Lookup.IMPL_LOOKUP;
 import static jdk.internal.org.objectweb.asm.Opcodes.*;
 
@@ -566,6 +569,55 @@ abstract class MethodHandleImpl {
         }
     }
 
+    /** Factory method:  Spread selected argument. */
+    static MethodHandle makeSpreadArguments(MethodHandle target,
+                                            Class<?> spreadArgType, int spreadArgPos, int spreadArgCount) {
+        MethodType targetType = target.type();
+
+        for (int i = 0; i < spreadArgCount; i++) {
+            Class<?> arg = VerifyType.spreadArgElementType(spreadArgType, i);
+            if (arg == null)  arg = Object.class;
+            targetType = targetType.changeParameterType(spreadArgPos + i, arg);
+        }
+        target = target.asType(targetType);
+
+        MethodType srcType = targetType
+                .replaceParameterTypes(spreadArgPos, spreadArgPos + spreadArgCount, spreadArgType);
+        // Now build a LambdaForm.
+        MethodType lambdaType = srcType.invokerType();
+        Name[] names = arguments(spreadArgCount + 2, lambdaType);
+        int nameCursor = lambdaType.parameterCount();
+        int[] indexes = new int[targetType.parameterCount()];
+
+        for (int i = 0, argIndex = 1; i < targetType.parameterCount() + 1; i++, argIndex++) {
+            Class<?> src = lambdaType.parameterType(i);
+            if (i == spreadArgPos) {
+                // Spread the array.
+                MethodHandle aload = MethodHandles.arrayElementGetter(spreadArgType);
+                Name array = names[argIndex];
+                names[nameCursor++] = new Name(getFunction(NF_checkSpreadArgument), array, spreadArgCount);
+                for (int j = 0; j < spreadArgCount; i++, j++) {
+                    indexes[i] = nameCursor;
+                    names[nameCursor++] = new Name(new NamedFunction(aload, Intrinsic.ARRAY_LOAD), array, j);
+                }
+            } else if (i < indexes.length) {
+                indexes[i] = argIndex;
+            }
+        }
+        assert(nameCursor == names.length-1);  // leave room for the final call
+
+        // Build argument array for the call.
+        Name[] targetArgs = new Name[targetType.parameterCount()];
+        for (int i = 0; i < targetType.parameterCount(); i++) {
+            int idx = indexes[i];
+            targetArgs[i] = names[idx];
+        }
+        names[names.length - 1] = new Name(target, (Object[]) targetArgs);
+
+        LambdaForm form = new LambdaForm(lambdaType.parameterCount(), names, Kind.SPREAD);
+        return SimpleMethodHandle.make(srcType, form);
+    }
+
     static void checkSpreadArgument(Object av, int n) {
         if (av == null && n == 0) {
             return;
@@ -580,6 +632,60 @@ abstract class MethodHandleImpl {
         }
         // fall through to error:
         throw newIllegalArgumentException("array is not of length "+n);
+    }
+
+    /** Factory method:  Collect or filter selected argument(s). */
+    static MethodHandle makeCollectArguments(MethodHandle target,
+                MethodHandle collector, int collectArgPos, boolean retainOriginalArgs) {
+        MethodType targetType = target.type();          // (a..., c, [b...])=>r
+        MethodType collectorType = collector.type();    // (b...)=>c
+        int collectArgCount = collectorType.parameterCount();
+        Class<?> collectValType = collectorType.returnType();
+        int collectValCount = (collectValType == void.class ? 0 : 1);
+        MethodType srcType = targetType                 // (a..., [b...])=>r
+                .dropParameterTypes(collectArgPos, collectArgPos+collectValCount);
+        if (!retainOriginalArgs) {                      // (a..., b...)=>r
+            srcType = srcType.insertParameterTypes(collectArgPos, collectorType.parameterArray());
+        }
+        // in  arglist: [0: ...keep1 | cpos: collect...  | cpos+cacount: keep2... ]
+        // out arglist: [0: ...keep1 | cpos: collectVal? | cpos+cvcount: keep2... ]
+        // out(retain): [0: ...keep1 | cpos: cV? coll... | cpos+cvc+cac: keep2... ]
+
+        // Now build a LambdaForm.
+        MethodType lambdaType = srcType.invokerType();
+        Name[] names = arguments(2, lambdaType);
+        final int collectNamePos = names.length - 2;
+        final int targetNamePos  = names.length - 1;
+
+        Name[] collectorArgs = Arrays.copyOfRange(names, 1 + collectArgPos, 1 + collectArgPos + collectArgCount);
+        names[collectNamePos] = new Name(collector, (Object[]) collectorArgs);
+
+        // Build argument array for the target.
+        // Incoming LF args to copy are: [ (mh) headArgs collectArgs tailArgs ].
+        // Output argument array is [ headArgs (collectVal)? (collectArgs)? tailArgs ].
+        Name[] targetArgs = new Name[targetType.parameterCount()];
+        int inputArgPos  = 1;  // incoming LF args to copy to target
+        int targetArgPos = 0;  // fill pointer for targetArgs
+        int chunk = collectArgPos;  // |headArgs|
+        System.arraycopy(names, inputArgPos, targetArgs, targetArgPos, chunk);
+        inputArgPos  += chunk;
+        targetArgPos += chunk;
+        if (collectValType != void.class) {
+            targetArgs[targetArgPos++] = names[collectNamePos];
+        }
+        chunk = collectArgCount;
+        if (retainOriginalArgs) {
+            System.arraycopy(names, inputArgPos, targetArgs, targetArgPos, chunk);
+            targetArgPos += chunk;   // optionally pass on the collected chunk
+        }
+        inputArgPos += chunk;
+        chunk = targetArgs.length - targetArgPos;  // all the rest
+        System.arraycopy(names, inputArgPos, targetArgs, targetArgPos, chunk);
+        assert(inputArgPos + chunk == collectNamePos);  // use of rest of input args also
+        names[targetNamePos] = new Name(target, (Object[]) targetArgs);
+
+        LambdaForm form = new LambdaForm(lambdaType.parameterCount(), names, Kind.COLLECT);
+        return SimpleMethodHandle.make(srcType, form);
     }
 
     @Hidden
@@ -664,7 +770,7 @@ abstract class MethodHandleImpl {
                                    DONT_INLINE_THRESHOLD);
     }
 
-    private static final class Makers {
+    private final static class Makers {
         /** Constructs reinvoker lambda form which block inlining during JIT-compilation for a particular method handle */
         static final Function<MethodHandle, LambdaForm> PRODUCE_BLOCK_INLINING_FORM = new Function<MethodHandle, LambdaForm>() {
             @Override
@@ -1023,14 +1129,44 @@ abstract class MethodHandleImpl {
         return BindCaller.bindCaller(mh, hostClass);
     }
 
+
+    /*
+     * Returns the original caller class bound to a caller-sensitive
+     * method if the given class is an injected invoker; otherwise
+     * this method returns null.
+     *
+     * An injected invoker class is a hidden class which has the same
+     * defining class loader, runtime package, and protection domain
+     * as the lookup class that looks up the caller-sensitive method.
+     */
+    static Class<?> originalCallerBoundToInvoker(Class<?> invoker) {
+        if (invoker.isHidden() && invoker.getName().contains(BindCaller.INVOKER_SUFFIX)) {
+            Lookup lookup = new Lookup(invoker);
+            try {
+                Object cd = MethodHandles.classData(lookup, ConstantDescs.DEFAULT_NAME, Object.class);
+                if (cd instanceof Class c) {
+                    // If a hidden class matching the injected invoker name but not injected
+                    // by BindCaller calls MethodHandles.lookup(), then an invoker class
+                    // will be defined but unused. This should be rare case.
+                    if (invoker.isNestmateOf(c) && BindCaller.CV_makeInjectedInvoker.get(c) == invoker) {
+                        return c;
+                    }
+                }
+            } catch (IllegalAccessException e) {
+                throw new InternalError(e);
+            }
+        }
+        return null;
+    }
+
     // Put the whole mess into its own nested class.
     // That way we can lazily load the code and set up the constants.
     private static class BindCaller {
         private static MethodType INVOKER_MT = MethodType.methodType(Object.class, MethodHandle.class, Object[].class);
-
+        private static final String INVOKER_SUFFIX = "$$InjectedInvoker";
         static MethodHandle bindCaller(MethodHandle mh, Class<?> hostClass) {
             // Code in the boot layer should now be careful while creating method handles or
-            // functional interface instances created from method references to @CallerSensitive  methods,
+            // functional interface instances created from method references to @CallerSensitive methods,
             // it needs to be ensured the handles or interface instances are kept safe and are not passed
             // from the boot layer to untrusted code.
             if (hostClass == null
@@ -1039,39 +1175,70 @@ abstract class MethodHandleImpl {
                        hostClass.getName().startsWith("java.lang.invoke."))) {
                 throw new InternalError();  // does not happen, and should not anyway
             }
-            // For simplicity, convert mh to a varargs-like method.
-            MethodHandle vamh = prepareForInvoker(mh);
-            // Cache the result of makeInjectedInvoker once per argument class.
-            MethodHandle bccInvoker = CV_makeInjectedInvoker.get(hostClass);
-            return restoreToType(bccInvoker.bindTo(vamh), mh, hostClass);
-        }
 
-        private static MethodHandle makeInjectedInvoker(Class<?> targetClass) {
-            try {
-                /*
-                 * The invoker class defined to the same class loader as the lookup class
-                 * but in an unnamed package so that the class bytes can be cached and
-                 * reused for any @CSM.
-                 *
-                 * @CSM must be public and exported if called by any module.
-                 */
-                String name = targetClass.getName() + "$$InjectedInvoker";
-                if (targetClass.isHidden()) {
-                    // use the original class name
-                    name = name.replace('/', '_');
+            MemberName member = mh.internalMemberName();
+            if (member != null) {
+                // Look up the alternate non-CSM method named "reflected$<method-name>"
+                // with an additional trailing caller class parameter.  If present,
+                // bind the alternate method handle with the lookup class as
+                // the caller class argument
+                MemberName alt = IMPL_LOOKUP.resolveOrNull(member.getReferenceKind(),
+                            new MemberName(member.getDeclaringClass(),
+                                           "reflected$" + member.getName(),
+                                           member.getMethodType().appendParameterTypes(Class.class),
+                                           member.getReferenceKind()));
+                if (alt != null) {
+                    assert !alt.isCallerSensitive();
+                    MethodHandle dmh = DirectMethodHandle.make(alt);
+                    dmh = MethodHandles.insertArguments(dmh, dmh.type().parameterCount() - 1, hostClass);
+                    dmh = new WrappedMember(dmh, mh.type(), member, mh.isInvokeSpecial(), hostClass);
+                    return dmh;
                 }
-                Class<?> invokerClass = new Lookup(targetClass)
-                        .makeHiddenClassDefiner(name, INJECTED_INVOKER_TEMPLATE)
-                        .defineClass(true);
-                assert checkInjectedInvoker(targetClass, invokerClass);
-                return IMPL_LOOKUP.findStatic(invokerClass, "invoke_V", INVOKER_MT);
+            }
+
+            // If no alternate method for CSM with an additional trailing Class
+            // parameter is present, then inject an invoker class that is the caller
+            // invoking the method handle of the CSM
+            try {
+                return bindCallerWithInjectedInvoker(mh, hostClass);
             } catch (ReflectiveOperationException ex) {
                 throw uncaughtException(ex);
             }
         }
 
-        private static ClassValue<MethodHandle> CV_makeInjectedInvoker = new ClassValue<MethodHandle>() {
-            @Override protected MethodHandle computeValue(Class<?> hostClass) {
+        private static MethodHandle bindCallerWithInjectedInvoker(MethodHandle mh, Class<?> hostClass)
+                throws ReflectiveOperationException
+        {
+            // For simplicity, convert mh to a varargs-like method.
+            MethodHandle vamh = prepareForInvoker(mh);
+            // Cache the result of makeInjectedInvoker once per argument class.
+            Class<?> invokerClass = CV_makeInjectedInvoker.get(hostClass);
+            MethodHandle bccInvoker = IMPL_LOOKUP.findStatic(invokerClass, "invoke_V", INVOKER_MT);
+            return restoreToType(bccInvoker.bindTo(vamh), mh, hostClass);
+        }
+
+        private static Class<?> makeInjectedInvoker(Class<?> targetClass) {
+            /*
+             * The invoker class defined to the same class loader as the lookup class
+             * but in an unnamed package so that the class bytes can be cached and
+             * reused for any @CSM.
+             *
+             * @CSM must be public and exported if called by any module.
+             */
+            String name = targetClass.getName() + INVOKER_SUFFIX;
+            if (targetClass.isHidden()) {
+                // use the original class name
+                name = name.replace('/', '_');
+            }
+            Class<?> invokerClass = new Lookup(targetClass)
+                    .makeHiddenClassDefiner(name, INJECTED_INVOKER_TEMPLATE, Set.of(NESTMATE))
+                    .defineClass(true, targetClass);
+            assert checkInjectedInvoker(targetClass, invokerClass);
+            return invokerClass;
+        }
+
+        private static ClassValue<Class<?>> CV_makeInjectedInvoker = new ClassValue<Class<?>>() {
+            @Override protected Class<?> computeValue(Class<?> hostClass) {
                 return makeInjectedInvoker(hostClass);
             }
         };
@@ -1845,7 +2012,7 @@ abstract class MethodHandleImpl {
         }
         @Override
         public String toString() {
-            StringBuilder sb = new StringBuilder("LoopClauses -- ");
+            StringBuffer sb = new StringBuffer("LoopClauses -- ");
             for (int i = 0; i < 4; ++i) {
                 if (i > 0) {
                     sb.append("       ");
