@@ -293,9 +293,9 @@
     <Field type="uint" name="gcId" label="GC Identifier" relation="GcId" />
   </Event>
 
-  <Event name="G1GarbageCollection" category="Java Virtual Machine, GC, Collector" label="G1 Young Garbage Collection" description="Extra information specific to G1 Young Garbage Collections">
+  <Event name="G1GarbageCollection" category="Java Virtual Machine, GC, Collector" label="G1 Garbage Collection" description="Extra information specific to G1 Garbage Collections">
     <Field type="uint" name="gcId" label="GC Identifier" relation="GcId" />
-    <Field type="G1YCType" name="type" label="Type"/>
+    <Field type="G1YCType" name="type" label="Type" />
   </Event>
 
   <Event name="G1MMU" category="Java Virtual Machine, GC, Detailed" label="G1 MMU Information" startTime="false">
@@ -806,6 +806,16 @@
     <Field type="Thread" name="thread" label="Thread" />
   </Event>
 
+  <Event name="JavaExceptionThrow" category="Java Application" label="Java Exception" stackTrace="true" thread="true" description="An object derived from java.lang.Exception has been thrown">
+    <Field type="string" name="message" label="Message" />
+    <Field type="Class" name="thrownClass" label="Class" />
+  </Event>
+
+  <Event name="JavaErrorThrow" category="Java Application" label="Java Error" stackTrace="true" thread="true" description="An object derived from java.lang.Error has been thrown.">
+    <Field type="string" name="message" label="Message" />
+    <Field type="Class" name="thrownClass" label="Class" />
+  </Event>
+
   <Event name="PhysicalMemory" category="Operating System, Memory" label="Physical Memory" description="OS Physical Memory" period="everyChunk">
     <Field type="ulong" contentType="bytes" name="totalSize" label="Total Size" description="Total amount of physical memory available to OS" />
     <Field type="ulong" contentType="bytes" name="usedSize" label="Used Size" description="Total amount of physical memory in use" />
@@ -1088,11 +1098,6 @@
     <Field type="long" name="size" label="Size" />
     <Field type="boolean" name="gcBeforeDump" label="GC Before Dump" />
     <Field type="boolean" name="onOutOfMemoryError" label="On Out of Memory Error" />
-  </Event>
-
-  <Event name="GCLocker" category="Java Virtual Machine, GC, Detailed" label="GC Locker" startTime="true" thread="true" stackTrace="true">
-    <Field type="uint" name="lockCount" label="Lock Count" description="The number of Java threads in a critical section when the GC locker is started" />
-    <Field type="uint" name="stallCount" label="Stall Count" description="The number of Java threads stalled by the GC locker" />
   </Event>
 
   <Type name="DeoptimizationReason" label="Deoptimization Reason">

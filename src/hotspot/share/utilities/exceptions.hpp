@@ -115,6 +115,12 @@ class Exceptions {
 
   // Count linkage errors
   static volatile int _linkage_errors;
+
+#if INCLUDE_JFR
+  // Count number of thrown exceptions / errors
+  static volatile int _num_throwables;
+#endif
+
  public:
   // this enum is defined to indicate whether it is safe to
   // ignore the encoding scheme of the original message string.
@@ -192,6 +198,11 @@ class Exceptions {
 
   // for logging exceptions
   static void log_exception(Handle exception, const char* message);
+
+#if INCLUDE_JFR
+  static int num_throwables();
+  static void emit_throw_event(oop exception);
+#endif
 };
 
 
@@ -321,8 +332,8 @@ class Exceptions {
   THREAD); if (HAS_PENDING_EXCEPTION) {    \
     oop ex = PENDING_EXCEPTION;            \
     CLEAR_PENDING_EXCEPTION;               \
-    DEBUG_ONLY(ex->print();)               \
-    assert(false, "CATCH");                \
+    ex->print();                           \
+    ShouldNotReachHere();                  \
   } (void)(0
 
 // ExceptionMark is a stack-allocated helper class for local exception handling.
@@ -331,26 +342,22 @@ class Exceptions {
 class ExceptionMark {
  private:
   Thread* _thread;
-  inline void check_no_pending_exception();
 
  public:
-  ExceptionMark();
-  ExceptionMark(Thread* thread);
+  ExceptionMark(Thread*& thread);
   ~ExceptionMark();
-
-  Thread* thread() {
-    return _thread;
-  }
 };
+
+
 
 // Use an EXCEPTION_MARK for 'local' exceptions. EXCEPTION_MARK makes sure that no
 // pending exception exists upon entering its scope and tests that no pending exception
 // exists when leaving the scope.
 
-// See also preserveException.hpp for PreserveExceptionMark
+// See also preserveException.hpp for PRESERVE_EXCEPTION_MARK macro,
 // which preserves pre-existing exceptions and does not allow new
 // exceptions.
 
-#define EXCEPTION_MARK                           ExceptionMark __em; Thread* THREAD = __em.thread();
+#define EXCEPTION_MARK                           Thread* THREAD = NULL; ExceptionMark __em(THREAD);
 
 #endif // SHARE_UTILITIES_EXCEPTIONS_HPP
