@@ -152,7 +152,7 @@ import java.util.Optional;
  * A tool for processing the .sym.txt files.
  *
  * To add historical data for JDK N, N >= 11, do the following:
- *  * cd <open-jdk-checkout>/make/data/symbols
+ *  * cd <open-jdk-checkout>/src/jdk.compiler/share/data/symbols
  *  * <jdk-N>/bin/java --add-exports jdk.jdeps/com.sun.tools.classfile=ALL-UNNAMED \
  *                     --add-exports jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED \
  *                     --add-exports jdk.compiler/com.sun.tools.javac.jvm=ALL-UNNAMED \
@@ -160,7 +160,7 @@ import java.util.Optional;
  *                     --add-modules jdk.jdeps \
  *                     ../../../make/langtools/src/classes/build/tools/symbolgenerator/CreateSymbols.java \
  *                     build-description-incremental symbols include.list
- *  * sanity-check the new and updates files in make/data/symbols and commit them
+ *  * sanity-check the new and updates files in src/jdk.compiler/share/data/symbols and commit them
  *
  * The tools allows to:
  *  * convert the .sym.txt into class/sig files for ct.sym
@@ -208,7 +208,8 @@ import java.util.Optional;
  * To generate the .sym.txt files for OpenJDK 7 and 8:
  *     <jdk-7>/bin/java build.tools.symbolgenerator.Probe OpenJDK7.classes
  *     <jdk-8>/bin/java build.tools.symbolgenerator.Probe OpenJDK8.classes
- *     java build.tools.symbolgenerator.CreateSymbols build-description make/data/symbols $TOPDIR make/data/symbols/include.list
+ *     java build.tools.symbolgenerator.CreateSymbols build-description src/jdk.compiler/share/data/symbols
+ *          $TOPDIR src/jdk.compiler/share/data/symbols/include.list
  *                                                    8 OpenJDK8.classes '<none>'
  *                                                    7 OpenJDK7.classes 8
  *
@@ -1112,32 +1113,20 @@ public class CreateSymbols {
 
     private Annotation createAnnotation(List<CPInfo> constantPool, AnnotationDescription desc) {
         String annotationType = desc.annotationType;
-        Map<String, Object> values = desc.values;
 
-        if (PREVIEW_FEATURE_ANNOTATION_NEW.equals(annotationType)) {
+        if (PREVIEW_FEATURE_ANNOTATION.equals(annotationType)) {
             //the non-public PreviewFeature annotation will not be available in ct.sym,
             //replace with purely synthetic javac-internal annotation:
             annotationType = PREVIEW_FEATURE_ANNOTATION_INTERNAL;
-        }
-
-        if (PREVIEW_FEATURE_ANNOTATION_OLD.equals(annotationType)) {
-            //the non-public PreviewFeature annotation will not be available in ct.sym,
-            //replace with purely synthetic javac-internal annotation:
-            annotationType = PREVIEW_FEATURE_ANNOTATION_INTERNAL;
-            values = new HashMap<>(values);
-            Boolean essentialAPI = (Boolean) values.remove("essentialAPI");
-            values.put("reflective", essentialAPI != null && !essentialAPI);
         }
 
         return new Annotation(null,
                               addString(constantPool, annotationType),
-                              createElementPairs(constantPool, values));
+                              createElementPairs(constantPool, desc.values));
     }
     //where:
-        private static final String PREVIEW_FEATURE_ANNOTATION_OLD =
+        private static final String PREVIEW_FEATURE_ANNOTATION =
                 "Ljdk/internal/PreviewFeature;";
-        private static final String PREVIEW_FEATURE_ANNOTATION_NEW =
-                "Ljdk/internal/javac/PreviewFeature;";
         private static final String PREVIEW_FEATURE_ANNOTATION_INTERNAL =
                 "Ljdk/internal/PreviewFeature+Annotation;";
 
