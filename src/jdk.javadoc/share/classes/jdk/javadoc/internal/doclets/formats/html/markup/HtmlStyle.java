@@ -48,7 +48,7 @@ import java.util.regex.Pattern;
  * or {@link javax.lang.model.element.Element "language model elements"}.
  * The usage is made explicit when it is not clear from the surrounding context.
  *
- * @see <a href="https://html.spec.whatwg.org/#classes">WhatWG: {@code class} attribute</a>
+ * @see <a href="https://html.spec.whatwg.org/#classes>WhatWG: {@code class} attribute</a>
  */
 public enum HtmlStyle {
     block,
@@ -78,6 +78,7 @@ public enum HtmlStyle {
     previewBlock,
     previewComment,
     previewLabel,
+    refList,
     searchTagLink,
     searchTagResult,
     serializedPackageContainer,
@@ -649,6 +650,11 @@ public enum HtmlStyle {
      * The class of the {@code body} element for a "doc-file" page..
      */
     docFilePage,
+
+    /**
+     * The class of the {@code body} element for the "external specifications" page.
+     */
+    externalSpecsPage,
 
     /**
      * The class of the {@code body} element for the "help" page.

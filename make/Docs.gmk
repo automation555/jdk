@@ -69,7 +69,6 @@ JAVADOC_TAGS := \
     -tag beaninfo:X \
     -tag revised:X \
     -tag since.unbundled:X \
-    -tag spec:X \
     -tag specdefault:X \
     -tag Note:X \
     -tag ToDo:X \
@@ -86,6 +85,7 @@ JAVADOC_TAGS := \
     -tag since \
     -tag serialData \
     -tag factory \
+    -tag spec \
     -tag see \
     -taglet build.tools.taglet.ExtLink \
     -taglet build.tools.taglet.Incubating \

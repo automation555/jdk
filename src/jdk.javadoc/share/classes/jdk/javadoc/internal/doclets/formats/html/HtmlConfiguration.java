@@ -146,7 +146,7 @@ public class HtmlConfiguration extends BaseConfiguration {
     // Note: this should (eventually) be merged with Navigation.PageMode,
     // which performs a somewhat similar role
     public enum ConditionalPage {
-        CONSTANT_VALUES, DEPRECATED, PREVIEW, SERIALIZED_FORM, SYSTEM_PROPERTIES
+        CONSTANT_VALUES, DEPRECATED, EXTERNAL_SPECS, PREVIEW, SERIALIZED_FORM, SYSTEM_PROPERTIES
     }
 
     /**
@@ -206,6 +206,7 @@ public class HtmlConfiguration extends BaseConfiguration {
 
         conditionalPages = EnumSet.noneOf(ConditionalPage.class);
     }
+
     protected void initConfiguration(DocletEnvironment docEnv,
                                      Function<String, String> resourceKeyMapper) {
         super.initConfiguration(docEnv, resourceKeyMapper);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,6 +30,10 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.UnsupportedEncodingException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -253,6 +257,18 @@ public abstract class BaseOptions {
      * The specified amount of space between tab stops.
      */
     private int sourceTabSize;
+
+    /**
+     * Argument for command-line option {@code --spec-base-URI}.
+     * The base URI for relative URIs in {@code @spec} tags.
+     */
+    private URI specBaseURI;
+
+    /**
+     * Argument for command-line option {@code --spec-list-file}.
+     * A file containing a list of specs and their titles.
+     */
+    private Path specListFile;
 
     /**
      * Value for command-line option {@code --override-methods summary}
@@ -546,6 +562,38 @@ public abstract class BaseOptions {
                     public boolean process(String opt, List<String> args) {
                         allowScriptInComments = true;
                         return true;
+                    }
+                },
+
+                new Option(resources, "--spec-base-uri", 1) {
+                    @Override
+                    public boolean process(String opt, List<String> args) {
+                        String arg = args.get(0);
+                        try {
+                            specBaseURI = new URI(arg);
+                            return true;
+                        } catch (URISyntaxException e) {
+                            config.reporter.print(ERROR,
+                                    config.getDocResources().getText("doclet.Invalid_URI",
+                                            e.getMessage()));
+                            return false;
+                        }
+                    }
+                },
+
+                new Option(resources, "--spec-list-file", 1) {
+                    @Override
+                    public boolean process(String opt, List<String> args) {
+                        String arg = args.get(0);
+                        try {
+                            specListFile = Path.of(arg);
+                            return true;
+                        } catch (InvalidPathException e) {
+                            config.reporter.print(ERROR,
+                                    config.getDocResources().getText("doclet.Invalid_Path",
+                                            e.getMessage()));
+                            return false;
+                        }
                     }
                 },
 
@@ -898,6 +946,22 @@ public abstract class BaseOptions {
      */
     public int sourceTabSize() {
         return sourceTabSize;
+    }
+
+    /**
+     * Argument for command-line option {@code --spec-base-URI}.
+     * The base URI for relative URIs in {@code @spec} tags.
+     */
+    public URI specBaseURI() {
+        return specBaseURI;
+    }
+
+    /**
+     * Argument for command-line option {@code --spec-list-file}.
+     * The base URI for relative URIs in {@code @spec} tags.
+     */
+    public Path specListFile() {
+        return specListFile;
     }
 
     /**

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -1393,6 +1393,35 @@ public class DocCommentParser {
                 public DCTree parse(int pos) {
                     List<DCTree> description = blockContent();
                     return m.at(pos).newSinceTree(description);
+                }
+            },
+
+            // @spec url label
+            // {@spec url label}
+            new TagParser(TagParser.Kind.EITHER, DCTree.Kind.SPEC) {
+                @Override
+                public DCTree parse(int pos, Kind kind) throws ParseException {
+                    skipWhitespace();
+                    DCText url = inlineWord();
+                    if (url == null || url.isBlank()) {
+                        throw new ParseException("dc.no.uri");
+                    }
+                    skipWhitespace();
+                    List<DCTree> label;
+                    switch (kind) {
+                        case BLOCK:
+                            label = blockContent();
+                            break;
+                        case INLINE:
+                            label = inlineContent();
+                            break;
+                        default:
+                            throw new IllegalArgumentException(kind.toString());
+                    }
+                    if (label.isEmpty() || DCTree.isBlank(label)) {
+                        throw new ParseException("dc.no.label");
+                    }
+                    return m.at(pos).newSpecTree(kind == Kind.INLINE, url, label);
                 }
             },
 

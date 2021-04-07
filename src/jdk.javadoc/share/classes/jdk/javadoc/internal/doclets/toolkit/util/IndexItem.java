@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2020, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -215,7 +215,7 @@ public class IndexItem {
         Objects.requireNonNull(link);
 
         switch (docTree.getKind()) {
-            case INDEX, SYSTEM_PROPERTY -> { }
+            case INDEX, SPEC, SYSTEM_PROPERTY -> { }
             default -> throw new IllegalArgumentException(docTree.getKind().toString());
         }
 
@@ -343,7 +343,7 @@ public class IndexItem {
 
     protected Category getCategory(DocTree docTree) {
         return switch (docTree.getKind()) {
-            case INDEX, SYSTEM_PROPERTY -> Category.TAGS;
+            case INDEX, SPEC, SYSTEM_PROPERTY -> Category.TAGS;
             default -> throw new IllegalArgumentException(docTree.getKind().toString());
         };
     }

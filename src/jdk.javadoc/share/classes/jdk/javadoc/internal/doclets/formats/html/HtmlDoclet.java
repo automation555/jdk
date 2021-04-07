@@ -25,7 +25,14 @@
 
 package jdk.javadoc.internal.doclets.formats.html;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.SortedSet;
 import java.util.function.Function;
 
 import javax.lang.model.SourceVersion;
@@ -243,6 +250,7 @@ public class HtmlDoclet extends AbstractDoclet {
         }
 
         if (options.createIndex()) {
+            ExternalSpecsWriter.generate(configuration);
             SystemPropertiesWriter.generate(configuration);
             configuration.mainIndex.addElements();
             IndexBuilder allClassesIndex = new IndexBuilder(configuration, nodeprecated, true);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,6 +28,7 @@ package jdk.javadoc.internal.doclets.toolkit;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -84,7 +85,7 @@ import jdk.javadoc.internal.doclint.DocLint;
  * Configure the output based on the options. Doclets should sub-class
  * BaseConfiguration, to configure and add their own options. This class contains
  * all user options which are supported by the standard doclet.
- *
+ * <p>
  * <p><b>This is NOT part of any supported API.
  * If you write code that depends on this, you do so at your own risk.
  * This code and its internal interfaces are subject to change or
@@ -150,6 +151,8 @@ public abstract class BaseConfiguration {
      * The tracker of external package links.
      */
     public Extern extern;
+
+    public ExternalSpecs externalSpecs;
 
     public final Reporter reporter;
 
@@ -372,6 +375,15 @@ public abstract class BaseConfiguration {
         }
         if (!options.noPlatformLinks()) {
             extern.checkPlatformLinks(options.linkPlatformProperties(), reporter);
+        }
+        Path specListFile = options.specListFile();
+        if (specListFile != null) {
+            try {
+                externalSpecs = ExternalSpecs.read(specListFile, getMessages());
+            } catch (IOException e) {
+                getMessages().error("doclet.exception.read.file", specListFile, e);
+                return false;
+            }
         }
         typeElementCatalog = new TypeElementCatalog(includedTypeElements, this);
         initTagletManager(options.customTagStrs());

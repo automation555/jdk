@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -58,6 +58,7 @@ import com.sun.source.doctree.SerialDataTree;
 import com.sun.source.doctree.SerialFieldTree;
 import com.sun.source.doctree.SerialTree;
 import com.sun.source.doctree.SinceTree;
+import com.sun.source.doctree.SpecTree;
 import com.sun.source.doctree.StartElementTree;
 import com.sun.source.doctree.SummaryTree;
 import com.sun.source.doctree.SystemPropertyTree;
@@ -325,6 +326,17 @@ public interface DocTreeFactory {
      * @return a {@code SinceTree} object
      */
     SinceTree newSinceTree(List<? extends DocTree> text);
+
+    /**
+     * Creates a new {@code SpecTree} object, to represent a {@code @spec} tag.
+     *
+     * @param inline whether this is instance is an inline tag
+     * @param uri    the uri
+     * @param label  the label
+     *
+     * @return a {@code SpecTree} object
+     */
+    SpecTree newSpecTree(boolean inline, TextTree uri, List<? extends DocTree> label);
 
     /**
      * Creates a new {@code StartElementTree} object, to represent the start of an HTML element.
