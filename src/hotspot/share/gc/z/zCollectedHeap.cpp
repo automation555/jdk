@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,7 +22,6 @@
  */
 
 #include "precompiled.hpp"
-#include "classfile/classLoaderData.hpp"
 #include "gc/shared/gcHeapSummary.hpp"
 #include "gc/shared/suspendibleThreadSet.hpp"
 #include "gc/z/zCollectedHeap.hpp"
@@ -38,6 +37,7 @@
 #include "gc/z/zUtils.inline.hpp"
 #include "memory/classLoaderMetaspace.hpp"
 #include "memory/iterator.hpp"
+#include "memory/metaspaceCriticalAllocation.hpp"
 #include "memory/universe.hpp"
 #include "utilities/align.hpp"
 
@@ -154,34 +154,17 @@ HeapWord* ZCollectedHeap::mem_allocate(size_t size, bool* gc_overhead_limit_was_
 MetaWord* ZCollectedHeap::satisfy_failed_metadata_allocation(ClassLoaderData* loader_data,
                                                              size_t size,
                                                              Metaspace::MetadataType mdtype) {
-  MetaWord* result;
-
   // Start asynchronous GC
-  collect(GCCause::_metadata_GC_threshold);
+  Universe::heap()->collect(GCCause::_metadata_GC_threshold);
 
   // Expand and retry allocation
-  result = loader_data->metaspace_non_null()->expand_and_allocate(size, mdtype);
+  MetaWord* result = loader_data->metaspace_non_null()->expand_and_allocate(size, mdtype);
   if (result != NULL) {
     return result;
   }
 
-  // Start synchronous GC
-  collect(GCCause::_metadata_GC_clear_soft_refs);
-
-  // Retry allocation
-  result = loader_data->metaspace_non_null()->allocate(size, mdtype);
-  if (result != NULL) {
-    return result;
-  }
-
-  // Expand and retry allocation
-  result = loader_data->metaspace_non_null()->expand_and_allocate(size, mdtype);
-  if (result != NULL) {
-    return result;
-  }
-
-  // Out of memory
-  return NULL;
+  // As a last resort, try a critical allocation, riding on a synchronous full GC
+  return MetaspaceCriticalAllocation::allocate(loader_data, size, mdtype);
 }
 
 void ZCollectedHeap::collect(GCCause::Cause cause) {
