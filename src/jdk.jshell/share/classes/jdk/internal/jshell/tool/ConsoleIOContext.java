@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -116,8 +116,8 @@ class ConsoleIOContext extends IOContext {
             }
         };
         Terminal terminal;
-        if (System.getProperty("test.jdk") != null) {
-            terminal = new TestTerminal(nonBlockingInput, cmdout);
+        if (cmdin != System.in) {
+            terminal = new NonSystemInTerminal(nonBlockingInput, cmdout);
             input.setInputStream(cmdin);
         } else {
             terminal = TerminalBuilder.builder().inputStreamWrapper(in -> {
@@ -247,8 +247,8 @@ class ConsoleIOContext extends IOContext {
     public Iterable<String> history(boolean currentSession) {
         return StreamSupport.stream(getHistory().spliterator(), false)
                             .filter(entry -> !currentSession || !historyLoad.equals(entry.time()))
-                            .map(History.Entry::line)
-                            .toList();
+                            .map(entry -> entry.line())
+                            .collect(Collectors.toList());
     }
 
     @Override
@@ -263,7 +263,7 @@ class ConsoleIOContext extends IOContext {
             StreamSupport.stream(in.getHistory().spliterator(), false)
                          .map(History.Entry::line)
                          .flatMap(this::toSplitEntries)
-                         .toList();
+                         .collect(Collectors.toList());
         if (!savedHistory.isEmpty()) {
             int len = (int) Math.ceil(Math.log10(savedHistory.size()+1));
             String format = HISTORY_LINE_PREFIX + "%0" + len + "d";
@@ -354,7 +354,7 @@ class ConsoleIOContext extends IOContext {
                     doc = repl.analysis.documentation(prefix + text, cursor + prefix.length(), false)
                                        .stream()
                                        .map(Documentation::signature)
-                                       .toList();
+                                       .collect(Collectors.toList());
                 }
                 long smartCount = suggestions.stream().filter(Suggestion::matchesType).count();
                 boolean hasSmart = smartCount > 0 && smartCount <= /*in.getAutoprintThreshold()*/AUTOPRINT_THRESHOLD;
@@ -589,7 +589,7 @@ class ConsoleIOContext extends IOContext {
 
         @Override
         public Result perform(String text, int cursor) throws IOException {
-            List<? extends CharSequence> toShow;
+            List<CharSequence> toShow;
 
             if (showSmart) {
                 toShow =
@@ -597,13 +597,13 @@ class ConsoleIOContext extends IOContext {
                                .filter(Suggestion::matchesType)
                                .map(Suggestion::continuation)
                                .distinct()
-                               .toList();
+                               .collect(Collectors.toList());
             } else {
                 toShow =
                     suggestions.stream()
                                .map(Suggestion::continuation)
                                .distinct()
-                               .toList();
+                               .collect(Collectors.toList());
             }
 
             if (toShow.isEmpty()) {
@@ -658,7 +658,7 @@ class ConsoleIOContext extends IOContext {
                     suggestions.stream()
                                .map(Suggestion::continuation)
                                .distinct()
-                               .toList();
+                               .collect(Collectors.toList());
 
             Optional<String> prefix =
                     candidates.stream()
@@ -792,7 +792,7 @@ class ConsoleIOContext extends IOContext {
             List<String> doc = repl.analysis.documentation(prefix + text, cursor + prefix.length(), true)
                                             .stream()
                                             .map(convertor)
-                                            .toList();
+                                            .collect(Collectors.toList());
             return doPrintFullDocumentation(todo, doc, false);
         }
 
@@ -1252,14 +1252,14 @@ class ConsoleIOContext extends IOContext {
         return in.getHistory();
     }
 
-    private static final class TestTerminal extends LineDisciplineTerminal {
+    private static final class NonSystemInTerminal extends LineDisciplineTerminal {
 
         private static final int DEFAULT_HEIGHT = 24;
 
         private final NonBlockingReader inputReader;
 
-        public TestTerminal(InputStream input, OutputStream output) throws Exception {
-            super("test", "ansi", output, Charset.forName("UTF-8"));
+        public NonSystemInTerminal(InputStream input, OutputStream output) throws Exception {
+            super("non-system-in", "ansi", output, Charset.forName("UTF-8"));
             this.inputReader = NonBlocking.nonBlocking(getName(), input, encoding());
             Attributes a = new Attributes(getAttributes());
             a.setLocalFlag(LocalFlag.ECHO, false);
@@ -1267,7 +1267,7 @@ class ConsoleIOContext extends IOContext {
             int h = DEFAULT_HEIGHT;
             try {
                 String hp = System.getProperty("test.terminal.height");
-                if (hp != null && !hp.isEmpty()) {
+                if (hp != null && !hp.isEmpty() && System.getProperty("test.jdk") != null) {
                     h = Integer.parseInt(hp);
                 }
             } catch (Throwable ex) {
