@@ -2068,13 +2068,7 @@ public class LambdaToMethod extends TreeTranslator {
                         };
                         break;
                     case LOCAL_VAR:
-                        ret = new VarSymbol(sym.flags() & FINAL, sym.name, sym.type, translatedSym) {
-                            @Override
-                            public Symbol baseSymbol() {
-                                //keep mapping with original symbol
-                                return sym;
-                            }
-                        };
+                        ret = new VarSymbol(sym.flags() & FINAL, sym.name, sym.type, translatedSym);
                         ((VarSymbol) ret).pos = ((VarSymbol) sym).pos;
                         // If sym.data == ElementKind.EXCEPTION_PARAMETER,
                         // set ret.data = ElementKind.EXCEPTION_PARAMETER too.
@@ -2202,11 +2196,13 @@ public class LambdaToMethod extends TreeTranslator {
                 // Lambda methods are private synthetic.
                 // Inherit ACC_STRICT from the enclosing method, or, for clinit,
                 // from the class.
-                translatedSym.flags_field = SYNTHETIC | LAMBDA_METHOD |
+                translatedSym.flags_field = SYNTHETIC |
                         owner.flags_field & STRICTFP |
                         owner.owner.flags_field & STRICTFP |
                         PRIVATE |
                         (thisReferenced? (inInterface? DEFAULT : 0) : STATIC);
+
+                translatedSym.setFlag(MethodSymbolFlags.LAMBDA_METHOD);
 
                 //compute synthetic params
                 ListBuffer<JCVariableDecl> params = new ListBuffer<>();
