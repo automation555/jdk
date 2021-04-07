@@ -1681,7 +1681,7 @@ public class MethodHandles {
          * (used during {@link #findClass} invocations)
          * are determined by the lookup class' loader,
          * which may change due to this operation.
-         *
+         * <p>
          * @param requestedLookupClass the desired lookup class for the new lookup object
          * @return a lookup object which reports the desired lookup class, or the same object
          * if there is no change
@@ -2262,9 +2262,10 @@ public class MethodHandles {
                     // workaround to read `this_class` using readConst and validate the value
                     int thisClass = reader.readUnsignedShort(reader.header + 2);
                     Object constant = reader.readConst(thisClass, new char[reader.getMaxStringLength()]);
-                    if (!(constant instanceof Type type)) {
+                    if (!(constant instanceof Type)) {
                         throw new ClassFormatError("this_class item: #" + thisClass + " not a CONSTANT_Class_info");
                     }
+                    Type type = ((Type) constant);
                     if (!type.getDescriptor().startsWith("L")) {
                         throw new ClassFormatError("this_class item: #" + thisClass + " not a CONSTANT_Class_info");
                     }
@@ -4193,6 +4194,22 @@ return mh1;
         }
 
         static ConcurrentHashMap<MemberName, DirectMethodHandle> LOOKASIDE_TABLE = new ConcurrentHashMap<>();
+    }
+
+    static MethodHandle unreflectMethod(Method m) throws IllegalAccessException {
+        return Lookup.IMPL_LOOKUP.unreflect(m);
+    }
+
+    static MethodHandle unreflectConstructor(Constructor<?> c) throws IllegalAccessException {
+        return Lookup.IMPL_LOOKUP.unreflectConstructor(c);
+    }
+
+    static MethodHandle unreflectConstructorForSerialization(Constructor<?> c, Class<?> instatiatedType) throws IllegalAccessException {
+        if (!c.getDeclaringClass().isAssignableFrom(instatiatedType)) {
+            throw newIllegalArgumentException("Constructor is not for a superclass", c, instatiatedType);
+        }
+        MemberName mn = new MemberName(c);
+        return DirectMethodHandle.makeAllocator(mn, instatiatedType).setVarargs(mn);
     }
 
     /**
