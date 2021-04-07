@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2004, 2020, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -355,7 +355,7 @@ public class PerfDataEntry extends VMObject {
                 StringBuilder buf = new StringBuilder();
                 buf.append('[');
                 for (int i = 0; i < res.length; i++) {
-                    buf.append(res[i]);
+                    buf.append(Boolean.toString(res[i]));
                     buf.append(", ");
                 }
                 buf.append(']');
@@ -372,7 +372,7 @@ public class PerfDataEntry extends VMObject {
                 StringBuilder buf = new StringBuilder();
                 buf.append('[');
                 for (int i = 0; i < res.length; i++) {
-                    buf.append(res[i]);
+                    buf.append(Short.toString(res[i]));
                     buf.append(", ");
                 }
                 buf.append(']');
@@ -382,7 +382,7 @@ public class PerfDataEntry extends VMObject {
                 StringBuilder buf = new StringBuilder();
                 buf.append('[');
                 for (int i = 0; i < res.length; i++) {
-                    buf.append(res[i]);
+                    buf.append(Integer.toString(res[i]));
                     buf.append(", ");
                 }
                 buf.append(']');
@@ -392,7 +392,7 @@ public class PerfDataEntry extends VMObject {
                 StringBuilder buf = new StringBuilder();
                 buf.append('[');
                 for (int i = 0; i < res.length; i++) {
-                    buf.append(res[i]);
+                    buf.append(Long.toString(res[i]));
                     buf.append(", ");
                 }
                 buf.append(']');
@@ -402,7 +402,7 @@ public class PerfDataEntry extends VMObject {
                 StringBuilder buf = new StringBuilder();
                 buf.append('[');
                 for (int i = 0; i < res.length; i++) {
-                    buf.append(res[i]);
+                    buf.append(Float.toString(res[i]));
                     buf.append(", ");
                 }
                 buf.append(']');
@@ -412,7 +412,7 @@ public class PerfDataEntry extends VMObject {
                 StringBuilder buf = new StringBuilder();
                 buf.append('[');
                 for (int i = 0; i < res.length; i++) {
-                    buf.append(res[i]);
+                    buf.append(Double.toString(res[i]));
                     buf.append(", ");
                 }
                 buf.append(']');
